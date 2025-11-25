@@ -1,0 +1,16 @@
+{
+  "project_path": "/path/to/project",
+  "source_file_types": [".java", ".xml"],
+  "sql_wrapping_type": "mybatis",
+  "access_tables": [
+    {
+      "table_name": "EMPLOYEE",
+      "columns": ["NAME", "JUMIN_NUMBER"]
+    },
+    {
+      "table_name": "CUSTOMER",
+      "columns": ["PHONE", "EMAIL"]
+    }
+  ]
+}
+
