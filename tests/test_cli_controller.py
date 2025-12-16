@@ -11,6 +11,7 @@ from tempfile import TemporaryDirectory
 
 import pytest
 
+from config.config_manager import ConfigurationManager
 from models.source_file import SourceFile
 from persistence.data_persistence_manager import DataPersistenceManager
 from cli.cli_controller import CLIController

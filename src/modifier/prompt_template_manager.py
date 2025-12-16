@@ -11,6 +11,7 @@ from typing import Any, Dict, Optional
 import tiktoken
 import yaml
 
+from .llm.llm_provider import LLMProvider
 
 logger = logging.getLogger(__name__)
 

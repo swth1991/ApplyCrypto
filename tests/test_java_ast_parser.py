@@ -4,12 +4,14 @@ Java AST Parser 테스트
 Java AST 파서의 기능을 테스트합니다.
 """
 
-from parser.java_ast_parser import JavaASTParser
+import shutil
+from parser.java_ast_parser import ClassInfo, JavaASTParser
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import pytest
 
+from models.method import Method, Parameter
 from persistence.cache_manager import CacheManager
 
 

@@ -4,9 +4,10 @@ ModificationRecord 데이터 모델
 코드 수정 내역을 저장하는 데이터 모델입니다.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
-from typing import List, Optional
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 
 @dataclass

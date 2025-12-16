@@ -4,9 +4,10 @@
 JSON 문자열을 읽을 때 datetime, Path 등 특수 타입으로 복원하는 디코더입니다.
 """
 
+import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 
 class CustomJSONDecoder:
