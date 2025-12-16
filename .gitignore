@@ -66,8 +66,3 @@ htmlcov/
 # Project specific
 *.backup
 config.json
-
-.cache
-.ruff_cache
-.applycrypto
-
