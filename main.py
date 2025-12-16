@@ -14,6 +14,7 @@ import sys
 from cli.cli_controller import CLIController
 
 
+
 def main():
     load_dotenv(".env")
 
@@ -25,3 +26,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
