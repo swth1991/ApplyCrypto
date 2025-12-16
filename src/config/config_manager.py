@@ -287,6 +287,22 @@ class ConfigurationManager:
 
         return self._config_data.get("llm_provider", "watsonx_ai")
 
+    @property
+    def use_type_handler(self) -> bool:
+        """
+        Type Handler 사용 여부를 반환합니다.
+
+        Type Handler를 사용하면 Java 비즈니스 로직을 직접 수정하지 않고
+        MyBatis Type Handler를 생성하여 암복호화를 적용합니다.
+
+        Returns:
+            bool: Type Handler 사용 여부 (기본값: False)
+        """
+        if self._config_data is None:
+            return False
+
+        return self._config_data.get("type_handler", False)
+
     def get(self, key: str, default: Any = None) -> Any:
         """
         설정값을 가져옵니다.
