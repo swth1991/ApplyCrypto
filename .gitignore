@@ -70,5 +70,4 @@ config.json
 .cache
 .ruff_cache
 .applycrypto
-.applycrypto/*
 
