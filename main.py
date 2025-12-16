@@ -1,5 +1,10 @@
-# Moved to src/cli/main.py
+import os
+import sys
 
-print(
-    "\033[91m경고: src/cli/main.py로 이동되었습니다. 대신 'applycrypto'를 실행하세요.\033[0m"
-)
+# Create a valid path so we can import from src
+sys.path.append(os.path.join(os.path.dirname(__file__), "src"))
+
+from cli.run import main
+
+if __name__ == "__main__":
+    main()

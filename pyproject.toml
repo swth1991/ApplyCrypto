@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [project.scripts]
-applycrypto = "cli.main:main"
+applycrypto = "cli.run:main"
 
 
 [tool.setuptools]
