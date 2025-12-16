@@ -921,6 +921,13 @@ class CLIController:
         try:
             # 설정 파일 로드
             config_manager = self.load_config(args.config)
+            
+            # Type Handler 모드 분기
+            if config_manager.use_type_handler:
+                self.logger.info("Type Handler 모드로 수정을 진행합니다.")
+                return self._handle_modify_with_type_handler(args, config_manager)
+            
+            # 기존 로직 (직접 코드 수정 방식)
             target_project = config_manager.target_project
 
             mode = "미리보기" if args.dry_run else "실제 수정"
@@ -1075,5 +1082,38 @@ class CLIController:
             return 1
         except Exception as e:
             self.logger.exception(f"modify 명령어 실행 중 오류: {e}")
+            print(f"오류: {e}", file=sys.stderr)
+            return 1
+
+    def _handle_modify_with_type_handler(
+        self, args: argparse.Namespace, config_manager: ConfigurationManager
+    ) -> int:
+        """
+        Type Handler 방식으로 암복호화를 적용하는 핸들러
+
+        Type Handler를 사용하면 Java 비즈니스 로직을 직접 수정하지 않고,
+        MyBatis TypeHandler 클래스를 생성하여 XML 매퍼에 등록합니다.
+
+        Args:
+            args: 파싱된 인자
+            config_manager: 설정 관리자
+
+        Returns:
+            int: 종료 코드
+        """
+        try:
+            from generator.type_handler_generator import TypeHandlerGenerator
+
+            self.logger.info("Type Handler Generator 초기화...")
+            generator = TypeHandlerGenerator(config_manager)
+
+            return generator.execute(dry_run=args.dry_run, apply_all=args.all)
+
+        except ImportError as e:
+            self.logger.error(f"Type Handler Generator 모듈을 로드할 수 없습니다: {e}")
+            print(f"오류: Type Handler Generator 모듈을 로드할 수 없습니다: {e}", file=sys.stderr)
+            return 1
+        except Exception as e:
+            self.logger.exception(f"Type Handler 수정 중 오류: {e}")
             print(f"오류: {e}", file=sys.stderr)
             return 1
