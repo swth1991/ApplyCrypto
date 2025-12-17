@@ -9,15 +9,16 @@ XML 매퍼에 typeHandler 속성을 등록합니다.
 import logging
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
 
-from lxml import etree
+from typing import Any, Dict, List, Optional
+
 
 from config.config_manager import ConfigurationManager
 from models.table_access_info import TableAccessInfo
+from modifier.error_handler import ErrorHandler
 from modifier.llm.llm_factory import create_llm_provider
 from modifier.llm.llm_provider import LLMProvider
-from modifier.error_handler import ErrorHandler
+
 from modifier.result_tracker import ResultTracker
 from persistence.data_persistence_manager import DataPersistenceManager
 
@@ -29,7 +30,7 @@ class TypeHandlerGenerator:
     Type Handler Generator 클래스
 
     MyBatis Type Handler를 자동 생성하여 암복호화를 적용합니다.
-    
+
     주요 기능:
     1. LLM을 활용한 Type Handler Java 클래스 생성
     2. XML 매퍼 파일에 typeHandler 속성 추가
@@ -50,9 +51,11 @@ You are a Java developer. Generate a MyBatis TypeHandler class for encrypting/de
 {columns_info}
 
 ## CryptoService Usage
-- Encryption: CryptoService.encrypt(String plainText)
-- Decryption: CryptoService.decrypt(String encryptedText)
+- Encryption: CryptoService.encrypt(String plainText, String cryptoCode)
+- Decryption: CryptoService.decrypt(String encryptedText, String cryptoCode)
 - Import: import com.ksign.crypto.CryptoService;
+- Each column has its own crypto_code that must be used for encryption/decryption.
+- Create separate methods or logic to handle each column with its specific crypto_code.
 
 ## Output Format
 Return ONLY the complete Java source code without any explanation.
@@ -85,6 +88,7 @@ Full class name: {type_handler_class}
 2. Add typeHandler attribute to parameter mappings (#{{columnName}}) for INSERT/UPDATE statements
 3. Do NOT modify any other parts of the XML
 4. Preserve all formatting and comments
+5. Note: Each column has its own crypto_code which is handled internally by the TypeHandler
 
 ## Output Format
 Return the complete modified XML content.
@@ -156,9 +160,13 @@ If no modifications are needed, return the original XML as-is with a comment at 
             print("  [1/4] 분석 결과 로드 중...")
             table_access_info_list = self._load_table_access_info()
             if not table_access_info_list:
-                print("  오류: 테이블 접근 정보가 없습니다. 먼저 'analyze' 명령어를 실행하세요.")
+                print(
+                    "  오류: 테이블 접근 정보가 없습니다. 먼저 'analyze' 명령어를 실행하세요."
+                )
                 return 1
-            print(f"  ✓ {len(table_access_info_list)}개의 테이블 접근 정보를 로드했습니다.")
+            print(
+                f"  ✓ {len(table_access_info_list)}개의 테이블 접근 정보를 로드했습니다."
+            )
 
             # SQL 추출 결과 로드 확인
             sql_results = self._load_sql_extraction_results()
@@ -174,39 +182,47 @@ If no modifications are needed, return the original XML as-is with a comment at 
             # 2. 각 테이블별로 처리
             for table_info in table_access_info_list:
                 print(f"\n  [2/4] 테이블 '{table_info.table_name}' 처리 중...")
-                
+
                 # 2.1 Type Handler 클래스 생성
-                print(f"    - Type Handler 클래스 생성 중...")
+                print("    - Type Handler 클래스 생성 중...")
                 handler_result = self._generate_type_handler_class(
                     table_info, dry_run, apply_all
                 )
-                
+
                 if handler_result["status"] == "success":
                     total_handlers_created += 1
-                    print(f"    ✓ Type Handler 생성 완료: {handler_result['class_name']}")
+                    print(
+                        f"    ✓ Type Handler 생성 완료: {handler_result['class_name']}"
+                    )
                 elif handler_result["status"] == "skipped":
                     total_skipped += 1
-                    print(f"    - Type Handler 생성 건너뜀: {handler_result.get('reason', '')}")
+                    print(
+                        f"    - Type Handler 생성 건너뜀: {handler_result.get('reason', '')}"
+                    )
                 else:
                     total_failed += 1
-                    print(f"    ✗ Type Handler 생성 실패: {handler_result.get('error', '')}")
+                    print(
+                        f"    ✗ Type Handler 생성 실패: {handler_result.get('error', '')}"
+                    )
                     continue
 
                 # 2.2 관련 XML 매퍼 파일 찾기 및 수정
-                print(f"    - XML 매퍼 파일 수정 중...")
+                print("    - XML 매퍼 파일 수정 중...")
                 xml_results = self._modify_xml_mappers(
                     table_info,
                     handler_result.get("full_class_name", ""),
                     dry_run,
                     apply_all,
                 )
-                
+
                 for result in xml_results:
                     if result["status"] == "success":
                         total_xml_modified += 1
                         print(f"    ✓ XML 수정 완료: {Path(result['file_path']).name}")
                     elif result["status"] == "skipped":
-                        print(f"    - XML 수정 건너뜀: {Path(result['file_path']).name}")
+                        print(
+                            f"    - XML 수정 건너뜀: {Path(result['file_path']).name}"
+                        )
                     else:
                         print(f"    ✗ XML 수정 실패: {result.get('error', '')}")
 
@@ -234,7 +250,7 @@ If no modifications are needed, return the original XML as-is with a comment at 
             return 1
 
     def _load_table_access_info(self) -> List[TableAccessInfo]:
-        """분석 결과에서 테이블 접근 정보 로드"""
+        """분석 결과에서 테이블 접근 정보 로드 (config의 crypto_code 병합)"""
         try:
             data = self.persistence_manager.load_from_file(
                 "table_access_info.json", TableAccessInfo
@@ -245,19 +261,66 @@ If no modifications are needed, return the original XML as-is with a comment at 
             result = []
             for info in data:
                 if isinstance(info, dict):
-                    result.append(TableAccessInfo.from_dict(info))
+                    table_info = TableAccessInfo.from_dict(info)
                 elif isinstance(info, TableAccessInfo):
-                    result.append(info)
+                    table_info = info
+                else:
+                    continue
+
+                # config_manager에서 crypto_code 정보 병합
+                table_info = self._merge_crypto_codes(table_info)
+                result.append(table_info)
+
             return result
 
         except Exception as e:
             logger.error(f"테이블 접근 정보 로드 실패: {e}")
             return []
 
+    def _merge_crypto_codes(self, table_info: TableAccessInfo) -> TableAccessInfo:
+        """config_manager에서 crypto_code 정보를 가져와 TableAccessInfo에 병합"""
+        # config에서 해당 테이블의 컬럼 정보 가져오기
+        config_columns = {}
+        for table in self.config_manager.access_tables:
+            if table["table_name"] == table_info.table_name:
+                for col in table.get("columns", []):
+                    if isinstance(col, dict):
+                        col_name = col.get("name", "")
+                        crypto_code = col.get("crypto_code", "")
+                        if col_name:
+                            config_columns[col_name] = crypto_code
+                break
+
+        # table_info의 columns에 crypto_code 추가
+        updated_columns = []
+        for col in table_info.columns:
+            if isinstance(col, dict):
+                col_name = col.get("name", "")
+                # config에서 crypto_code 가져오기
+                if col_name in config_columns:
+                    col["crypto_code"] = config_columns[col_name]
+                updated_columns.append(col)
+            elif isinstance(col, str):
+                # 문자열인 경우 dict로 변환
+                updated_columns.append(
+                    {
+                        "name": col,
+                        "new_column": False,
+                        "crypto_code": config_columns.get(col, ""),
+                    }
+                )
+            else:
+                updated_columns.append(col)
+
+        table_info.columns = updated_columns
+        return table_info
+
     def _load_sql_extraction_results(self) -> List[Dict[str, Any]]:
         """sql_extraction_results.json에서 SQL 추출 결과 로드"""
         try:
-            data = self.persistence_manager.load_from_file("sql_extraction_results.json")
+            data = self.persistence_manager.load_from_file(
+                "sql_extraction_results.json"
+            )
             return data if data else []
         except Exception as e:
             logger.error(f"SQL 추출 결과 로드 실패: {e}")
@@ -266,29 +329,29 @@ If no modifications are needed, return the original XML as-is with a comment at 
     def _find_xml_files_for_table(self, table_name: str) -> List[Path]:
         """
         sql_extraction_results.json을 참고하여 특정 테이블과 관련된 XML 파일 탐색
-        
+
         Args:
             table_name: 테이블명
-            
+
         Returns:
             List[Path]: 관련 XML 파일 경로 목록
         """
         xml_files = []
         table_name_lower = table_name.lower()
-        
+
         # SQL 추출 결과에서 테이블을 사용하는 XML 파일 찾기
         sql_results = self._load_sql_extraction_results()
-        
+
         for result in sql_results:
             file_info = result.get("file", {})
             file_path = file_info.get("path", "")
-            
+
             # XML 파일이 아니면 스킵
             if not str(file_path).endswith(".xml"):
                 continue
-                
+
             sql_queries = result.get("sql_queries", [])
-            
+
             # 해당 파일의 SQL 쿼리 중에 타겟 테이블을 사용하는 쿼리가 있는지 확인
             for query in sql_queries:
                 sql = query.get("sql", "").lower()
@@ -297,9 +360,11 @@ If no modifications are needed, return the original XML as-is with a comment at 
                     xml_path = Path(file_path)
                     if xml_path.exists() and xml_path not in xml_files:
                         xml_files.append(xml_path)
-                        logger.info(f"테이블 '{table_name}' 관련 XML 파일 발견: {xml_path.name}")
+                        logger.info(
+                            f"테이블 '{table_name}' 관련 XML 파일 발견: {xml_path.name}"
+                        )
                     break  # 이 파일에서 이미 찾았으므로 다음 파일로
-        
+
         return xml_files
 
     def _find_xml_mapper_files(self) -> List[Path]:
@@ -307,20 +372,20 @@ If no modifications are needed, return the original XML as-is with a comment at 
         프로젝트에서 모든 XML 매퍼 파일 탐색 (sql_extraction_results.json 활용)
         """
         xml_files = []
-        
+
         # SQL 추출 결과에서 XML 파일 목록 추출
         sql_results = self._load_sql_extraction_results()
-        
+
         for result in sql_results:
             file_info = result.get("file", {})
             file_path = file_info.get("path", "")
-            
+
             # XML 파일이면 추가
             if file_path.endswith(".xml"):
                 xml_path = Path(file_path)
                 if xml_path.exists():
                     xml_files.append(xml_path)
-        
+
         return xml_files
 
     def _generate_type_handler_class(
@@ -383,7 +448,7 @@ If no modifications are needed, return the original XML as-is with a comment at 
             # 미리보기 출력
             if not apply_all and not dry_run:
                 print(f"\n--- Type Handler 클래스 미리보기: {class_name} ---")
-                print(java_code[:500] + "..." if len(java_code) > 500 else java_code)
+                print(f"\033[92m{java_code}\033[0m")  # Green
                 print(f"--- 저장 경로: {output_path} ---\n")
 
                 choice = self._get_user_confirmation()
@@ -441,9 +506,11 @@ If no modifications are needed, return the original XML as-is with a comment at 
 
         # sql_extraction_results.json에서 테이블 관련 XML 파일 찾기
         related_xml_files = self._find_xml_files_for_table(table_info.table_name)
-        
+
         if not related_xml_files:
-            logger.warning(f"테이블 '{table_info.table_name}'과 관련된 XML 파일을 찾을 수 없습니다.")
+            logger.warning(
+                f"테이블 '{table_info.table_name}'과 관련된 XML 파일을 찾을 수 없습니다."
+            )
             return results
 
         for xml_file in related_xml_files:
@@ -552,9 +619,12 @@ If no modifications are needed, return the original XML as-is with a comment at 
             if not dry_run:
                 # 백업 생성
                 self.error_handler.backup_file(xml_file)
-                
+
                 with open(xml_file, "w", encoding="utf-8") as f:
                     f.write(modified_xml)
+
+                logger.info(f"XML 파일 수정 완료: {xml_file}")
+                print(f"XML 파일 수정 완료: {xml_file}")
 
             return {
                 "status": "success",
@@ -567,6 +637,7 @@ If no modifications are needed, return the original XML as-is with a comment at 
             raise
         except Exception as e:
             import traceback
+
             logger.error(f"XML 수정 실패: {xml_file} - {e}")
             logger.error(f"스택 트레이스:\n{traceback.format_exc()}")
             return {
@@ -586,13 +657,20 @@ If no modifications are needed, return the original XML as-is with a comment at 
         return f"{pascal_name}EncryptTypeHandler"
 
     def _format_columns_info(self, columns: List[Any]) -> str:
-        """컬럼 정보를 문자열로 포맷팅"""
+        """컬럼 정보를 문자열로 포맷팅 (crypto_code 포함)"""
         lines = []
         for col in columns:
             if isinstance(col, dict):
                 col_name = col.get("name", str(col))
                 is_new = col.get("new_column", False)
-                lines.append(f"  - {col_name}" + (" (new column)" if is_new else ""))
+                crypto_code = col.get("crypto_code", "")
+
+                col_info = f"  - {col_name}"
+                if crypto_code:
+                    col_info += f' (crypto_code: "{crypto_code}")'
+                if is_new:
+                    col_info += " (new column)"
+                lines.append(col_info)
             else:
                 lines.append(f"  - {col}")
         return "\n".join(lines)
@@ -648,9 +726,7 @@ If no modifications are needed, return the original XML as-is with a comment at 
 
         return None
 
-    def _print_xml_diff(
-        self, file_path: Path, original: str, modified: str
-    ) -> None:
+    def _print_xml_diff(self, file_path: Path, original: str, modified: str) -> None:
         """XML 변경사항 출력"""
         import difflib
 
@@ -684,4 +760,3 @@ If no modifications are needed, return the original XML as-is with a comment at 
             if choice in ["y", "n", "a", "q"]:
                 return choice
             print("잘못된 입력입니다.")
-
