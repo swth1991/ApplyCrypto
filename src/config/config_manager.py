@@ -43,6 +43,18 @@ class ConfigurationManager:
                 "type": "string",
                 "description": "대상 프로젝트 루트 경로",
             },
+            "type_handler": {
+                "type": "boolean",
+                "description": "Type Handler 사용 여부",
+            },
+            "type_handler_package": {
+                "type": "string",
+                "description": "Type Handler 패키지 이름",
+            },
+            "type_handler_output_dir": {
+                "type": "string",
+                "description": "Type Handler 출력 디렉터리",
+            },
             "source_file_types": {
                 "type": "array",
                 "items": {"type": "string"},
@@ -70,6 +82,7 @@ class ConfigurationManager:
                                         "properties": {
                                             "name": {"type": "string"},
                                             "new_column": {"type": "boolean"},
+                                            "crypto_code": {"type": "string"},
                                         },
                                         "required": ["name"],
                                     },

@@ -921,12 +921,12 @@ class CLIController:
         try:
             # 설정 파일 로드
             config_manager = self.load_config(args.config)
-            
+
             # Type Handler 모드 분기
             if config_manager.use_type_handler:
                 self.logger.info("Type Handler 모드로 수정을 진행합니다.")
                 return self._handle_modify_with_type_handler(args, config_manager)
-            
+
             # 기존 로직 (직접 코드 수정 방식)
             target_project = config_manager.target_project
 
@@ -1111,7 +1111,10 @@ class CLIController:
 
         except ImportError as e:
             self.logger.error(f"Type Handler Generator 모듈을 로드할 수 없습니다: {e}")
-            print(f"오류: Type Handler Generator 모듈을 로드할 수 없습니다: {e}", file=sys.stderr)
+            print(
+                f"오류: Type Handler Generator 모듈을 로드할 수 없습니다: {e}",
+                file=sys.stderr,
+            )
             return 1
         except Exception as e:
             self.logger.exception(f"Type Handler 수정 중 오류: {e}")
