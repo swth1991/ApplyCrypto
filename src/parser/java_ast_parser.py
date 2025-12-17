@@ -40,6 +40,7 @@ class ClassInfo:
     name: str
     package: str = ""
     superclass: Optional[str] = None
+    is_interface_class: bool = False
     interfaces: List[str] = field(default_factory=list)
     annotations: List[str] = field(default_factory=list)
     fields: List[Dict[str, Any]] = field(default_factory=list)
@@ -57,6 +58,7 @@ class ClassInfo:
             "name": self.name,
             "package": self.package,
             "superclass": self.superclass,
+            "is_interface_class": self.is_interface_class,
             "interfaces": self.interfaces,
             "annotations": self.annotations,
             "fields": self.fields,  # 이미 Dict 형태
@@ -216,6 +218,7 @@ class JavaASTParser:
                     node, package_name, file_path
                 )
                 if class_info:
+                    class_info.is_interface_class = True
                     classes.append(class_info)
 
         return classes
@@ -275,9 +278,11 @@ class JavaASTParser:
                     ]:
                         class_info.superclass = subchild.text.decode("utf8")
                         break
-            elif child.type == "interfaces":
+            elif child.type == "super_interfaces":
+                # interfaces 노드의 자식을 순회하며 인터페이스 추출
                 for subchild in child.children:
                     if subchild.type == "type_list":
+                        # 여러 인터페이스가 있는 경우 (예: implements A, B, C)
                         for interface_node in subchild.children:
                             if interface_node.type in [
                                 "type_identifier",
@@ -287,7 +292,6 @@ class JavaASTParser:
                                 interface_name = interface_node.text.decode("utf8")
                                 if interface_name:
                                     class_info.interfaces.append(interface_name)
-
         # 클래스/인터페이스 바디 분석
         for child in node.children:
             if child.type in ["class_body", "interface_body"]:
