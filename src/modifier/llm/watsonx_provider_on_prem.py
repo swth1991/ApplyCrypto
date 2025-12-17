@@ -68,7 +68,7 @@ class WatsonXAIOnPremiseProvider(LLMProvider):
                 "Content-Type": "application/json",
             }
             data = {
-                "usernamae": self.user_name,
+                "username": self.user_name,
                 "password": self.password,
                 "api_key": self.api_key,
             }
@@ -180,4 +180,4 @@ class WatsonXAIOnPremiseProvider(LLMProvider):
         Returns:
             str: "watsonx_ai"
         """
-        return "watsonx_ai"
+        return "watsonx_ai_on_prem"
