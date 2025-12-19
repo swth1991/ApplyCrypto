@@ -50,7 +50,7 @@ class TypeHandlerGenerator:
         return class_name
 
     # encryption_code별 TypeHandler 템플릿
-    TYPE_HANDLER_JAVA_TEMPLATE = '''package {package_name};
+    TYPE_HANDLER_JAVA_TEMPLATE = """package {package_name};
 
 import java.sql.CallableStatement;
 import java.sql.PreparedStatement;
@@ -117,7 +117,7 @@ public class {class_name} extends BaseTypeHandler<String> {{
         return CryptoService.decrypt(encryptedText, CryptoService.{encryption_code});
     }}
 }}
-'''
+"""
 
     XML_MODIFICATION_PROMPT_TEMPLATE = """
 ## Task
@@ -245,7 +245,9 @@ If no modifications are needed, return the original XML as-is with a comment at 
 
                 if handler_result["status"] == "success":
                     total_handlers_created += 1
-                    generated_handlers[encryption_code] = handler_result["full_class_name"]
+                    generated_handlers[encryption_code] = handler_result[
+                        "full_class_name"
+                    ]
                     print(f"    ✓ {handler_result['class_name']} 생성 완료")
                 elif handler_result["status"] == "skipped":
                     total_skipped += 1
@@ -278,7 +280,9 @@ If no modifications are needed, return the original XML as-is with a comment at 
                 for result in xml_results:
                     if result["status"] == "success":
                         total_xml_modified += 1
-                        print(f"      ✓ XML 수정 완료: {Path(result['file_path']).name}")
+                        print(
+                            f"      ✓ XML 수정 완료: {Path(result['file_path']).name}"
+                        )
                     elif result["status"] == "skipped":
                         print(
                             f"      - XML 수정 건너뜀: {Path(result['file_path']).name}"
@@ -712,7 +716,6 @@ If no modifications are needed, return the original XML as-is with a comment at 
                 "error": str(e),
             }
 
-
     def _format_columns_info_with_handler(
         self, columns: List[Any], type_handler_mapping: Dict[str, str]
     ) -> str:
@@ -725,7 +728,7 @@ If no modifications are needed, return the original XML as-is with a comment at 
 
                 if encryption_code and encryption_code in type_handler_mapping:
                     handler_class = type_handler_mapping[encryption_code]
-                    lines.append(f"  - {col_name} -> typeHandler=\"{handler_class}\"")
+                    lines.append(f'  - {col_name} -> typeHandler="{handler_class}"')
                 else:
                     lines.append(f"  - {col_name} (no TypeHandler)")
             else:

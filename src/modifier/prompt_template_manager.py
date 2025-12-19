@@ -139,7 +139,7 @@ class PromptTemplateManager:
         if "few_shot_examples" in template:
             prompt_parts.append("\n## Few-shot Examples\n")
             examples = template["few_shot_examples"]
-            
+
             # 문자열 형식인 경우 (call_chain 템플릿 등)
             if isinstance(examples, str):
                 prompt_parts.append(examples)
@@ -157,7 +157,9 @@ class PromptTemplateManager:
                         f"**After:**\n```java\n{example.get('after', '')}\n```\n"
                     )
                     if "explanation" in example:
-                        prompt_parts.append(f"**Explanation:** {example['explanation']}\n")
+                        prompt_parts.append(
+                            f"**Explanation:** {example['explanation']}\n"
+                        )
 
         # Table Column Info
         if "table_column_info" in template:

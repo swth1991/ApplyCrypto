@@ -8,10 +8,9 @@ Call Chain Processor 모듈
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, FrozenSet, List, Optional, Set, Tuple
+from typing import Any, Dict, FrozenSet, List, Optional, Set
 
 from config.config_manager import ConfigurationManager
-from models.modification_plan import ModificationPlan
 from models.table_access_info import TableAccessInfo
 
 from .error_handler import ErrorHandler
@@ -83,7 +82,7 @@ class CallChainProcessor:
 
         # 처리 완료된 파일 조합 추적 (단일 실행 내에서만)
         self.processed_combinations: Set[FrozenSet[str]] = set()
-        
+
         # 이미 수정된 파일 추적 (중복 수정 방지)
         self.modified_files: Set[str] = set()
 
@@ -113,7 +112,7 @@ class CallChainProcessor:
         logger.info("Call Chain 처리 시작...")
         self.result_tracker.start_tracking()
         self.processed_combinations.clear()
-        
+
         # apply_all 플래그 저장 (다른 메서드에서 사용)
         self._apply_all = apply_all
 
@@ -144,7 +143,7 @@ class CallChainProcessor:
                 # 체인 구성 파일 분류 및 로깅
                 chain_info = self._classify_chain_files(chain_files)
                 chain_description = self._format_chain_description(chain_info)
-                
+
                 # 이미 처리한 상위집합이 있으면 스킵
                 if self._should_skip(chain_files):
                     logger.info(
@@ -201,6 +200,7 @@ class CallChainProcessor:
 
         except Exception as e:
             import traceback
+
             logger.error(f"Call Chain 처리 실패: {e}")
             logger.error(f"Traceback: {traceback.format_exc()}")
             self.result_tracker.end_tracking()
@@ -223,7 +223,9 @@ class CallChainProcessor:
         # Path 객체로 변환 후 절대 경로로 정규화
         return str(Path(file_path).resolve())
 
-    def _classify_chain_files(self, chain_files: FrozenSet[str]) -> Dict[str, List[str]]:
+    def _classify_chain_files(
+        self, chain_files: FrozenSet[str]
+    ) -> Dict[str, List[str]]:
         """
         체인 파일들을 레이어별로 분류합니다.
 
@@ -242,12 +244,14 @@ class CallChainProcessor:
 
         for file_path in chain_files:
             file_name = Path(file_path).name.lower()
-            
+
             if "controller" in file_name:
                 result["controller"].append(Path(file_path).name)
             elif "service" in file_name:
                 result["service"].append(Path(file_path).name)
-            elif "mapper" in file_name or "dao" in file_name or "repository" in file_name:
+            elif (
+                "mapper" in file_name or "dao" in file_name or "repository" in file_name
+            ):
                 result["mapper"].append(Path(file_path).name)
             else:
                 result["other"].append(Path(file_path).name)
@@ -265,7 +269,7 @@ class CallChainProcessor:
             str: 포맷팅된 체인 설명
         """
         parts = []
-        
+
         if chain_info["controller"]:
             parts.append(f"Controller: {', '.join(chain_info['controller'])}")
         if chain_info["service"]:
@@ -324,15 +328,30 @@ class CallChainProcessor:
             if filename.endswith(pattern) or pattern.lower() in filename.lower():
                 # 단, Controller, Service, Mapper는 제외하지 않음
                 if not any(
-                    x in filename for x in ["Controller", "Service", "Mapper", "Dao", "Repository"]
+                    x in filename
+                    for x in ["Controller", "Service", "Mapper", "Dao", "Repository"]
                 ):
                     logger.debug(f"제외 파일: {file_path} (패턴: {pattern})")
                     return True
 
         # beans, vo, dto, entity, model, domain 디렉토리 내 파일 제외
         path_lower = file_path.lower()
-        excluded_dirs = ["/beans/", "/vo/", "/dto/", "/entity/", "/model/", "/domain/", "/pojo/",
-                         "\\beans\\", "\\vo\\", "\\dto\\", "\\entity\\", "\\model\\", "\\domain\\", "\\pojo\\"]
+        excluded_dirs = [
+            "/beans/",
+            "/vo/",
+            "/dto/",
+            "/entity/",
+            "/model/",
+            "/domain/",
+            "/pojo/",
+            "\\beans\\",
+            "\\vo\\",
+            "\\dto\\",
+            "\\entity\\",
+            "\\model\\",
+            "\\domain\\",
+            "\\pojo\\",
+        ]
         for excluded_dir in excluded_dirs:
             if excluded_dir in path_lower:
                 logger.debug(f"제외 파일: {file_path} (디렉토리: {excluded_dir})")
@@ -376,28 +395,34 @@ class CallChainProcessor:
         # 디버깅: target_files와 call_trees 정보 출력
         logger.info(f"call_trees 개수: {len(call_trees)}")
         logger.info(f"target_files (정규화됨): {target_files}")
-        
+
         # Employee 관련 트리 찾아서 출력
         # emp_trees = [t for t in call_trees if "Emp" in t.get("method_signature", "") or "Employee" in t.get("method_signature", "")]
         # logger.info(f"Employee 관련 트리 개수: {len(emp_trees)}")
-        
+
         # if emp_trees:
-            # first_emp_tree = emp_trees[0]
-            # raw_path = first_emp_tree.get('file_path', 'N/A')
-            # normalized_path = self._normalize_path(raw_path) if raw_path != 'N/A' else 'N/A'
-            # logger.info(f"첫 Employee 트리 file_path (원본): {raw_path}")
-            # logger.info(f"첫 Employee 트리 file_path (정규화): {normalized_path}")
-            # logger.info(f"정규화된 경로가 target_files에 있는지: {normalized_path in target_files}")
+        # first_emp_tree = emp_trees[0]
+        # raw_path = first_emp_tree.get('file_path', 'N/A')
+        # normalized_path = self._normalize_path(raw_path) if raw_path != 'N/A' else 'N/A'
+        # logger.info(f"첫 Employee 트리 file_path (원본): {raw_path}")
+        # logger.info(f"첫 Employee 트리 file_path (정규화): {normalized_path}")
+        # logger.info(f"정규화된 경로가 target_files에 있는지: {normalized_path in target_files}")
 
         for tree in call_trees:
             # 각 트리에서 체인 추출
-            tree_chains = self._extract_chains_from_tree(tree, target_files, signature_to_file)
+            tree_chains = self._extract_chains_from_tree(
+                tree, target_files, signature_to_file
+            )
             chains.extend(tree_chains)
 
         return chains
 
     def _extract_chains_from_tree(
-        self, node: Dict[str, Any], target_files: Set[str], signature_to_file: Dict[str, str], current_chain: Optional[Set[str]] = None
+        self,
+        node: Dict[str, Any],
+        target_files: Set[str],
+        signature_to_file: Dict[str, str],
+        current_chain: Optional[Set[str]] = None,
     ) -> List[FrozenSet[str]]:
         """
         트리 노드에서 재귀적으로 호출 체인을 추출합니다.
@@ -415,7 +440,7 @@ class CallChainProcessor:
             current_chain = set()
 
         chains = []
-        
+
         # 노드에서 직접 file_path 가져오기 (없으면 signature_to_file 매핑 사용)
         file_path = node.get("file_path", "")
         if not file_path:
@@ -427,7 +452,11 @@ class CallChainProcessor:
             file_path = self._normalize_path(file_path)
 
         # 현재 노드의 파일이 대상 파일에 포함되고 제외 대상이 아니면 체인에 추가
-        if file_path and file_path in target_files and not self._is_excluded_file(file_path):
+        if (
+            file_path
+            and file_path in target_files
+            and not self._is_excluded_file(file_path)
+        ):
             current_chain = current_chain | {file_path}
 
         children = node.get("children", [])
@@ -515,21 +544,27 @@ class CallChainProcessor:
                     col_name = col.get("name", "")
                     # config에서 encryption_code 가져오기
                     encryption_code = config_columns.get(col_name.lower(), "")
-                    columns_with_code.append({
-                        "name": col_name,
-                        "encryption_code": encryption_code,
-                    })
+                    columns_with_code.append(
+                        {
+                            "name": col_name,
+                            "encryption_code": encryption_code,
+                        }
+                    )
                 elif isinstance(col, str):
                     encryption_code = config_columns.get(col.lower(), "")
-                    columns_with_code.append({
-                        "name": col,
-                        "encryption_code": encryption_code,
-                    })
+                    columns_with_code.append(
+                        {
+                            "name": col,
+                            "encryption_code": encryption_code,
+                        }
+                    )
 
-            tables.append({
-                "table_name": table_info.table_name,
-                "columns": columns_with_code,
-            })
+            tables.append(
+                {
+                    "table_name": table_info.table_name,
+                    "columns": columns_with_code,
+                }
+            )
 
         return {"tables": tables}
 
@@ -624,7 +659,9 @@ class CallChainProcessor:
                 # 이미 다른 체인에서 수정된 파일인지 확인
                 normalized_path = self._normalize_path(file_path_str)
                 if normalized_path in self.modified_files:
-                    logger.info(f"파일 스킵: {file_path_str} (이미 다른 체인에서 수정됨)")
+                    logger.info(
+                        f"파일 스킵: {file_path_str} (이미 다른 체인에서 수정됨)"
+                    )
                     results.append(
                         {
                             "file_path": file_path_str,
@@ -662,10 +699,10 @@ class CallChainProcessor:
                     continue
 
                 # 사용자 확인 (dry_run이 아니고 apply_all이 아닌 경우)
-                if not dry_run and not getattr(self, '_apply_all', False):
+                if not dry_run and not getattr(self, "_apply_all", False):
                     self._print_file_diff(file_path, original_content, modified_code)
                     choice = self._get_user_confirmation()
-                    
+
                     if choice == "n":
                         logger.info(f"사용자가 건너뛰기를 선택함: {file_path_str}")
                         results.append(
@@ -704,10 +741,10 @@ class CallChainProcessor:
                         f.write(modified_code)
 
                     logger.info(f"파일 수정 완료: {file_path_str}")
-                    
+
                     # 수정된 파일 추적 (중복 수정 방지)
                     self.modified_files.add(normalized_path)
-                    
+
                     results.append(
                         {
                             "file_path": file_path_str,
@@ -753,11 +790,10 @@ class CallChainProcessor:
         Raises:
             Exception: 파싱 실패 시
         """
-        import re
 
         # 응답에서 content 추출
         content = response.get("content", "")
-        
+
         # 디버깅: LLM 원본 응답 로깅
         logger.debug(f"LLM 원본 응답 키: {list(response.keys())}")
         logger.debug(f"LLM content 길이: {len(content) if content else 0}")
@@ -767,14 +803,14 @@ class CallChainProcessor:
             logger.debug(f"LLM content 미리보기:\n{preview}")
         else:
             logger.warning(f"LLM 응답 content가 비어있음. 전체 응답: {response}")
-        
+
         if not content:
             raise Exception("LLM 응답에 content가 없습니다.")
 
         # JSON 코드 블록 제거
         original_content = content  # 디버깅용 원본 보관
         content = content.strip()
-        
+
         if content.startswith("```json"):
             lines = content.split("\n")
             content = "\n".join(lines[1:-1]) if len(lines) > 2 else content
@@ -783,46 +819,51 @@ class CallChainProcessor:
             lines = content.split("\n")
             content = "\n".join(lines[1:-1]) if len(lines) > 2 else content
             logger.debug("``` 코드 블록 제거됨")
-        
+
         # 코드 블록 제거 후 확인
         if not content.strip():
-            logger.error(f"코드 블록 제거 후 content가 비어있음. 원본:\n{original_content[:1000]}")
+            logger.error(
+                f"코드 블록 제거 후 content가 비어있음. 원본:\n{original_content[:1000]}"
+            )
 
         # 제어 문자 및 잘못된 이스케이프 시퀀스 처리 함수
         def escape_control_chars_in_strings(text: str) -> str:
             """JSON 문자열 값 내의 제어 문자와 잘못된 이스케이프 시퀀스를 처리합니다."""
             # 유효한 JSON 이스케이프 문자
-            valid_escapes = {'"', '\\', '/', 'b', 'f', 'n', 'r', 't', 'u'}
-            
+            valid_escapes = {'"', "\\", "/", "b", "f", "n", "r", "t", "u"}
+
             result = []
             in_string = False
             i = 0
-            
+
             while i < len(text):
                 char = text[i]
-                
-                if char == '"' and (i == 0 or text[i-1] != '\\'):
+
+                if char == '"' and (i == 0 or text[i - 1] != "\\"):
                     in_string = not in_string
                     result.append(char)
                     i += 1
                     continue
-                
-                if in_string and char == '\\':
+
+                if in_string and char == "\\":
                     # 백슬래시 처리
                     if i + 1 < len(text):
                         next_char = text[i + 1]
-                        
+
                         if next_char in valid_escapes:
                             # 유효한 이스케이프 시퀀스
-                            if next_char == 'u':
+                            if next_char == "u":
                                 # \uXXXX 형식 확인
-                                if i + 5 < len(text) and all(c in '0123456789abcdefABCDEF' for c in text[i+2:i+6]):
-                                    result.append(text[i:i+6])
+                                if i + 5 < len(text) and all(
+                                    c in "0123456789abcdefABCDEF"
+                                    for c in text[i + 2 : i + 6]
+                                ):
+                                    result.append(text[i : i + 6])
                                     i += 6
                                     continue
                                 else:
                                     # 잘못된 \u 시퀀스 → 이중 이스케이프
-                                    result.append('\\\\')
+                                    result.append("\\\\")
                                     i += 1
                                     continue
                             else:
@@ -833,33 +874,33 @@ class CallChainProcessor:
                                 continue
                         else:
                             # 잘못된 이스케이프 시퀀스 → 백슬래시 이중 이스케이프
-                            result.append('\\\\')
+                            result.append("\\\\")
                             i += 1
                             continue
                     else:
                         # 문자열 끝의 백슬래시
-                        result.append('\\\\')
+                        result.append("\\\\")
                         i += 1
                         continue
-                
+
                 if in_string:
                     # 문자열 내 제어 문자 이스케이프
-                    if char == '\n':
-                        result.append('\\n')
-                    elif char == '\r':
-                        result.append('\\r')
-                    elif char == '\t':
-                        result.append('\\t')
+                    if char == "\n":
+                        result.append("\\n")
+                    elif char == "\r":
+                        result.append("\\r")
+                    elif char == "\t":
+                        result.append("\\t")
                     elif ord(char) < 32:
-                        result.append(f'\\u{ord(char):04x}')
+                        result.append(f"\\u{ord(char):04x}")
                     else:
                         result.append(char)
                 else:
                     result.append(char)
-                
+
                 i += 1
-            
-            return ''.join(result)
+
+            return "".join(result)
 
         # 제어 문자 이스케이프 적용
         content = escape_control_chars_in_strings(content)
@@ -872,7 +913,7 @@ class CallChainProcessor:
             logger.warning(f"JSON 파싱 첫 시도 실패: {e}")
             logger.debug(f"파싱 실패한 content 길이: {len(content)}")
             logger.debug(f"파싱 실패한 content 처음 200자:\n{content[:200]}")
-            
+
             # modifications 부분만 추출 시도
             if "modifications" in content:
                 start_idx = content.find('"modifications"')
@@ -892,15 +933,23 @@ class CallChainProcessor:
                                         break
                                     except json.JSONDecodeError:
                                         # 한 번 더 제어 문자 이스케이프 시도
-                                        json_str = escape_control_chars_in_strings(json_str)
+                                        json_str = escape_control_chars_in_strings(
+                                            json_str
+                                        )
                                         data = json.loads(json_str)
                                         break
                         else:
-                            raise Exception("JSON 파싱 실패: 올바른 JSON 형식이 아닙니다.")
+                            raise Exception(
+                                "JSON 파싱 실패: 올바른 JSON 형식이 아닙니다."
+                            )
                     else:
-                        raise Exception("JSON 파싱 실패: modifications를 찾을 수 없습니다.")
+                        raise Exception(
+                            "JSON 파싱 실패: modifications를 찾을 수 없습니다."
+                        )
                 else:
-                    raise Exception("JSON 파싱 실패: modifications 키를 찾을 수 없습니다.")
+                    raise Exception(
+                        "JSON 파싱 실패: modifications 키를 찾을 수 없습니다."
+                    )
             else:
                 raise Exception(f"JSON 파싱 실패: {e}")
 
@@ -920,7 +969,9 @@ class CallChainProcessor:
                 mod["reason"] = "No reason provided"
             if "modified" not in mod:
                 # 하위 호환성: unified_diff가 있으면 modified=True로 간주
-                mod["modified"] = bool(mod.get("unified_diff", "") or mod.get("modified_code", ""))
+                mod["modified"] = bool(
+                    mod.get("unified_diff", "") or mod.get("modified_code", "")
+                )
             if "modified_code" not in mod:
                 mod["modified_code"] = ""
             valid_modifications.append(mod)
@@ -929,7 +980,9 @@ class CallChainProcessor:
         return valid_modifications
 
     def _build_prompt(
-        self, files_with_content: List[Dict[str, str]], table_column_info: Dict[str, Any]
+        self,
+        files_with_content: List[Dict[str, str]],
+        table_column_info: Dict[str, Any],
     ) -> str:
         """
         LLM 프롬프트를 생성합니다.
@@ -980,14 +1033,14 @@ class CallChainProcessor:
             str: 포맷팅된 텍스트
         """
         lines = []
-        
+
         for table in table_column_info.get("tables", []):
             table_name = table.get("table_name", "Unknown")
             lines.append(f"### Table: {table_name}")
             lines.append("")
             lines.append("| Column Name | encryption_code (USE THIS EXACT CODE) |")
             lines.append("|-------------|---------------------------------------|")
-            
+
             for col in table.get("columns", []):
                 if isinstance(col, dict):
                     col_name = col.get("name", "")
@@ -996,9 +1049,9 @@ class CallChainProcessor:
                         lines.append(f"| {col_name} | **{encryption_code}** |")
                     else:
                         lines.append(f"| {col_name} | (no encryption_code specified) |")
-            
+
             lines.append("")
-        
+
         return "\n".join(lines)
 
     def _print_file_diff(self, file_path: Path, original: str, modified: str) -> None:
@@ -1022,7 +1075,7 @@ class CallChainProcessor:
         print(f"\n{'=' * 80}")
         print(f"[Diff] {file_path}")
         print("-" * 80)
-        
+
         has_diff = False
         for line in diff:
             has_diff = True
@@ -1034,10 +1087,10 @@ class CallChainProcessor:
                 print(f"\033[96m{line}\033[0m", end="")  # Cyan
             else:
                 print(line, end="")
-        
+
         if not has_diff:
             print("(변경사항 없음)")
-        
+
         print("-" * 80)
 
     def _get_user_confirmation(self) -> str:
@@ -1055,4 +1108,3 @@ class CallChainProcessor:
             if choice in ["y", "n", "a", "q"]:
                 return choice
             print("잘못된 입력입니다. y, n, a, q 중 하나를 입력하세요.")
-
