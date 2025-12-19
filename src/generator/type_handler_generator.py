@@ -11,7 +11,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from config.config_manager import ConfigurationManager
+from config.config_manager import Configuration
 from models.table_access_info import TableAccessInfo
 from modifier.error_handler import ErrorHandler
 from modifier.llm.llm_factory import create_llm_provider
@@ -149,40 +149,38 @@ If no modifications are needed, return the original XML as-is with a comment at 
 
     def __init__(
         self,
-        config_manager: ConfigurationManager,
+        config: Configuration,
         llm_provider: Optional[LLMProvider] = None,
     ):
         """
         TypeHandlerGenerator 초기화
 
         Args:
-            config_manager: 설정 관리자
+            config: 설정 객체
             llm_provider: LLM 프로바이더 (선택적)
         """
-        self.config_manager = config_manager
-        self.project_root = Path(config_manager.get("target_project"))
+        self.config = config
+        self.project_root = Path(config.target_project)
 
         # LLM 프로바이더 초기화
         if llm_provider:
             self.llm_provider = llm_provider
         else:
-            llm_provider_name = config_manager.get("llm_provider", "watsonx_ai")
-            self.llm_provider = create_llm_provider(provider_name=llm_provider_name)
+            self.llm_provider = create_llm_provider(provider_name=config.llm_provider)
 
         # 컴포넌트 초기화
-        self.error_handler = ErrorHandler(
-            max_retries=config_manager.get("max_retries", 3)
-        )
+        self.error_handler = ErrorHandler(max_retries=config.max_retries)
         self.result_tracker = ResultTracker()
         self.persistence_manager = DataPersistenceManager(self.project_root)
 
         # Type Handler 기본 설정
-        self.type_handler_package = config_manager.get(
-            "type_handler_package", "com.example.typehandler"
-        )
-        self.type_handler_output_dir = config_manager.get(
-            "type_handler_output_dir", "src/main/java"
-        )
+        type_handler_config = config.type_handler
+        if type_handler_config:
+            self.type_handler_package = type_handler_config.package
+            self.type_handler_output_dir = type_handler_config.output_dir
+        else:
+            self.type_handler_package = "com.example.typehandler"
+            self.type_handler_output_dir = "src/main/java"
 
         logger.info(
             f"TypeHandlerGenerator 초기화 완료: {self.llm_provider.get_provider_name()}"
@@ -442,7 +440,7 @@ If no modifications are needed, return the original XML as-is with a comment at 
         """config_manager에서 encryption_code 정보를 가져와 TableAccessInfo에 병합"""
         # config에서 해당 테이블의 컬럼 정보 가져오기
         config_columns = {}
-        for table in self.config_manager.get("access_tables"):
+        for table in self.config.access_tables:
             if table.table_name.lower() == table_info.table_name.lower():
                 for col in table.columns:
                     if not isinstance(col, str):
