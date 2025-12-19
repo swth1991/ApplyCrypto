@@ -78,6 +78,9 @@ class PromptTemplateManager:
         # 템플릿 파일 경로 (통합 템플릿 사용)
         if template_type == "default":
             template_file = self.template_dir / "prompt_template.yaml"
+        elif template_type == "call_chain":
+            # Call Chain 모드용 템플릿
+            template_file = self.template_dir / "call_chain_prompt_template.yaml"
         else:
             # 하위 호환성을 위해 기존 파일명도 지원
             template_file = self.template_dir / f"prompt_template_{template_type}.yaml"
@@ -135,18 +138,26 @@ class PromptTemplateManager:
         # Few-shot Examples
         if "few_shot_examples" in template:
             prompt_parts.append("\n## Few-shot Examples\n")
-            for i, example in enumerate(template["few_shot_examples"], 1):
-                prompt_parts.append(
-                    f"\n### Example {i}: {example.get('example_type', '')}\n"
-                )
-                prompt_parts.append(
-                    f"**Before:**\n```java\n{example.get('before', '')}\n```\n"
-                )
-                prompt_parts.append(
-                    f"**After:**\n```java\n{example.get('after', '')}\n```\n"
-                )
-                if "explanation" in example:
-                    prompt_parts.append(f"**Explanation:** {example['explanation']}\n")
+            examples = template["few_shot_examples"]
+            
+            # 문자열 형식인 경우 (call_chain 템플릿 등)
+            if isinstance(examples, str):
+                prompt_parts.append(examples)
+                prompt_parts.append("\n")
+            # 리스트 형식인 경우 (기존 템플릿)
+            elif isinstance(examples, list):
+                for i, example in enumerate(examples, 1):
+                    prompt_parts.append(
+                        f"\n### Example {i}: {example.get('example_type', '')}\n"
+                    )
+                    prompt_parts.append(
+                        f"**Before:**\n```java\n{example.get('before', '')}\n```\n"
+                    )
+                    prompt_parts.append(
+                        f"**After:**\n```java\n{example.get('after', '')}\n```\n"
+                    )
+                    if "explanation" in example:
+                        prompt_parts.append(f"**Explanation:** {example['explanation']}\n")
 
         # Table Column Info
         if "table_column_info" in template:
@@ -187,6 +198,16 @@ class PromptTemplateManager:
             else:
                 prompt_parts.append(template["file_count"])
                 prompt_parts.append("\n")
+
+        # Call Chain Info (Call Chain 모드용)
+        if "call_chain_info" in template:
+            prompt_parts.append("\n## Call Chain Information\n")
+            try:
+                call_chain_info = template["call_chain_info"].format(**variables)
+                prompt_parts.append(call_chain_info)
+            except KeyError:
+                prompt_parts.append(template["call_chain_info"])
+            prompt_parts.append("\n")
 
         # Output Format
         if "output_format" in template:

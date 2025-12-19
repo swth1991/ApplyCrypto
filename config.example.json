@@ -1,16 +1,42 @@
 {
-  "project_path": "/path/to/project",
+  "target_project": "/path/to/project",
   "source_file_types": [".java", ".xml"],
   "sql_wrapping_type": "mybatis",
   "access_tables": [
     {
       "table_name": "EMPLOYEE",
-      "columns": ["NAME", "JUMIN_NUMBER"]
+      "columns": [
+        {
+          "name": "NAME",
+          "new_column": false,
+          "encryption_code": "K_SIGN_NAME"
+        },
+        {
+          "name": "JUMIN_NUMBER",
+          "new_column": false,
+          "encryption_code": "K_SIGN_JUMIN"
+        }
+      ]
     },
     {
       "table_name": "CUSTOMER",
-      "columns": ["PHONE", "EMAIL"]
+      "columns": [
+        {
+          "name": "PHONE",
+          "new_column": false,
+          "encryption_code": "K_SIGN_PHONE"
+        },
+        {
+          "name": "EMAIL",
+          "new_column": false,
+          "encryption_code": "K_SIGN_EMAIL"
+        }
+      ]
     }
-  ]
+  ],
+  "llm_provider": "watsonx_ai",
+  "type_handler": false,
+  "use_call_chain_mode": false,
+  "exclude_dirs": ["test", "generated"],
+  "exclude_files": ["*Test.java", "*_test.java"]
 }
-

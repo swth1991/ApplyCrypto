@@ -47,6 +47,10 @@ class ConfigurationManager:
                 "type": "boolean",
                 "description": "Type Handler 사용 여부",
             },
+            "use_call_chain_mode": {
+                "type": "boolean",
+                "description": "Call Chain 모드 사용 여부 (호출 체인 단위로 LLM 호출)",
+            },
             "type_handler_package": {
                 "type": "string",
                 "description": "Type Handler 패키지 이름",
@@ -82,13 +86,12 @@ class ConfigurationManager:
                                         "properties": {
                                             "name": {"type": "string"},
                                             "new_column": {"type": "boolean"},
-                                            "column_type": {
+                                            "encryption_code": {
                                                 "type": "string",
-                                                "enum": ["dob", "ssn", "name", "sex"],
-                                                "description": "컬럼 타입 (dob: 생년월일, ssn: 주민번호, name: 이름, sex: 성별)",
+                                                "description": "암호화 코드 (예: K_SIGN_JUMIN, K_SIGN_NAME, K_SIGN_DOB, K_SIGN_GENDER)",
                                             },
                                         },
-                                        "required": ["name"],
+                                        "required": ["name", "encryption_code"],
                                     },
                                 ]
                             },
@@ -255,13 +258,14 @@ class ConfigurationManager:
         특정 테이블의 암호화 대상 칼럼 목록을 반환합니다.
 
         Args:
-            table_name: 테이블명
+            table_name: 테이블명 (대소문자 구분 없음)
 
         Returns:
             List[str]: 칼럼명 목록 (테이블이 없으면 빈 리스트)
         """
+        table_name_lower = table_name.lower()
         for table in self.access_tables:
-            if table["table_name"] == table_name:
+            if table["table_name"].lower() == table_name_lower:
                 return table.get("columns", [])
         return []
 
@@ -319,6 +323,23 @@ class ConfigurationManager:
             return False
 
         return self._config_data.get("type_handler", False)
+
+    @property
+    def use_call_chain_mode(self) -> bool:
+        """
+        Call Chain 모드 사용 여부를 반환합니다.
+
+        Call Chain 모드를 사용하면 레이어별 배치 처리 대신
+        호출 체인(Controller → Service → Repository) 단위로 LLM을 호출하여
+        가장 적절한 레이어에 암복호화 코드를 삽입합니다.
+
+        Returns:
+            bool: Call Chain 모드 사용 여부 (기본값: False)
+        """
+        if self._config_data is None:
+            return False
+
+        return self._config_data.get("use_call_chain_mode", False)
 
     def get(self, key: str, default: Any = None) -> Any:
         """
