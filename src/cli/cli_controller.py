@@ -928,7 +928,7 @@ class CLIController:
                 return self._handle_modify_with_type_handler(args, config_manager)
 
             # Call Chain 모드 분기
-            if config_manager.use_call_chain_mode:
+            if config_manager.get("use_call_chain_mode", False):
                 self.logger.info("Call Chain 모드로 수정을 진행합니다.")
                 return self._handle_modify_with_call_chain(args, config_manager)
 
@@ -1146,7 +1146,7 @@ class CLIController:
         try:
             from modifier.call_chain_processor import CallChainProcessor
 
-            target_project = config_manager.target_project
+            target_project = config_manager.get("target_project")
 
             mode = "미리보기" if args.dry_run else "실제 수정"
             self.logger.info(f"Call Chain 모드로 파일 수정 시작 (모드: {mode})...")

@@ -11,12 +11,14 @@ from pathlib import Path
 from typing import Any, Dict, FrozenSet, List, Optional, Set
 
 from config.config_manager import ConfigurationManager
+from models.modification_context import CodeSnippet
 from models.table_access_info import TableAccessInfo
 
+from .diff_generator import DiffGeneratorInput
+from .diff_generator.call_chain import CallChainDiffGenerator
 from .error_handler import ErrorHandler
 from .llm.llm_factory import create_llm_provider
 from .llm.llm_provider import LLMProvider
-from .prompt_template_manager import PromptTemplateManager
 from .result_tracker import ResultTracker
 
 logger = logging.getLogger("applycrypto.call_chain_processor")
@@ -63,7 +65,7 @@ class CallChainProcessor:
         """
         self.config_manager = config_manager
         self.project_root = (
-            Path(project_root) if project_root else Path(config_manager.project_path)
+            Path(project_root) if project_root else Path(config_manager.get("target_project"))
         )
 
         # LLM 프로바이더 초기화
@@ -73,8 +75,10 @@ class CallChainProcessor:
             llm_provider_name = config_manager.get("llm_provider", "watsonx_ai")
             self.llm_provider = create_llm_provider(provider_name=llm_provider_name)
 
+        # DiffGenerator 초기화 (새로운 패턴)
+        self.diff_generator = CallChainDiffGenerator(llm_provider=self.llm_provider)
+
         # 컴포넌트 초기화
-        self.template_manager = PromptTemplateManager()
         self.error_handler = ErrorHandler(
             max_retries=config_manager.get("max_retries", 3)
         )
@@ -527,12 +531,14 @@ class CallChainProcessor:
         for table_info in table_access_info_list:
             # config에서 해당 테이블의 encryption_code 정보 가져오기
             config_columns = {}
-            for config_table in self.config_manager.access_tables:
-                if config_table["table_name"].lower() == table_info.table_name.lower():
-                    for col in config_table.get("columns", []):
-                        if isinstance(col, dict):
-                            col_name = col.get("name", "").lower()
-                            encryption_code = col.get("encryption_code", "")
+            access_tables = self.config_manager.get("access_tables", [])
+            for config_table in access_tables:
+                if config_table.table_name.lower() == table_info.table_name.lower():
+                    for col in config_table.columns:
+                        # Pydantic ColumnDetail 모델 또는 문자열 처리
+                        if hasattr(col, 'name'):
+                            col_name = col.name.lower()
+                            encryption_code = getattr(col, 'encryption_code', "") or ""
                             if col_name and encryption_code:
                                 config_columns[col_name] = encryption_code
                     break
@@ -587,14 +593,16 @@ class CallChainProcessor:
         """
         results = []
 
-        # 파일 내용 읽기
-        files_with_content = []
+        # 파일 내용 읽기 → CodeSnippet 객체로 변환
+        code_snippets = []
+        files_with_content = []  # 호환성을 위해 유지
         for file_path in sorted(chain_files):
             try:
                 path = Path(file_path)
                 if path.exists():
                     with open(path, "r", encoding="utf-8") as f:
                         content = f.read()
+                    code_snippets.append(CodeSnippet(path=str(path), content=content))
                     files_with_content.append(
                         {
                             "path": str(path),
@@ -606,37 +614,34 @@ class CallChainProcessor:
             except Exception as e:
                 logger.error(f"파일 읽기 실패: {file_path} - {e}")
 
-        if not files_with_content:
+        if not code_snippets:
             logger.warning("처리할 파일이 없습니다.")
             return results
 
-        # 프롬프트 생성
-        prompt = self._build_prompt(files_with_content, table_column_info)
+        # 파일 목록 문자열 생성
+        file_list = ", ".join([Path(f.path).name for f in code_snippets])
 
-        # LLM 호출
+        # 테이블/칼럼 정보를 텍스트로 포맷팅
+        table_info_text = self._format_table_column_info(table_column_info)
+
+        # DiffGeneratorInput 생성
+        diff_input = DiffGeneratorInput(
+            code_snippets=code_snippets,
+            table_info=table_info_text,
+            layer_name="CallChain",
+            extra_variables={"file_list": file_list},
+        )
+
+        # DiffGenerator로 LLM 호출
         try:
-            response, error = self.error_handler.retry_with_backoff(
-                self.llm_provider.call, prompt
-            )
-
-            if error:
-                logger.error(f"LLM 호출 실패: {error}")
-                for file_info in files_with_content:
-                    results.append(
-                        {
-                            "file_path": file_info["path"],
-                            "status": "failed",
-                            "error": str(error),
-                        }
-                    )
-                return results
+            response = self.diff_generator.generate(diff_input)
 
             if not self.llm_provider.validate_response(response):
                 logger.error("LLM 응답이 유효하지 않습니다.")
-                for file_info in files_with_content:
+                for snippet in code_snippets:
                     results.append(
                         {
-                            "file_path": file_info["path"],
+                            "file_path": snippet.path,
                             "status": "failed",
                             "error": "Invalid LLM response",
                         }
@@ -978,49 +983,6 @@ class CallChainProcessor:
 
         logger.info(f"{len(valid_modifications)}개 파일 수정 정보를 파싱했습니다.")
         return valid_modifications
-
-    def _build_prompt(
-        self,
-        files_with_content: List[Dict[str, str]],
-        table_column_info: Dict[str, Any],
-    ) -> str:
-        """
-        LLM 프롬프트를 생성합니다.
-
-        Args:
-            files_with_content: 파일 정보 목록
-            table_column_info: 테이블/칼럼 정보
-
-        Returns:
-            str: 생성된 프롬프트
-        """
-        # 템플릿 로드
-        template = self.template_manager.load_template("call_chain")
-
-        # 파일 내용 포맷팅
-        source_files_content = "\n\n".join(
-            [
-                f"=== File Path (Absolute): {f['path']} ===\n{f['content']}"
-                for f in files_with_content
-            ]
-        )
-
-        # 파일 목록
-        file_list = ", ".join([Path(f["path"]).name for f in files_with_content])
-
-        # 테이블/칼럼 정보를 명확한 텍스트 형식으로 변환
-        table_info_text = self._format_table_column_info(table_column_info)
-
-        # 템플릿 렌더링
-        variables = {
-            "source_files": source_files_content,
-            "table_info": table_info_text,
-            "file_count": len(files_with_content),
-            "file_list": file_list,
-        }
-
-        prompt = self.template_manager.render_template(template, variables)
-        return prompt
 
     def _format_table_column_info(self, table_column_info: Dict[str, Any]) -> str:
         """
