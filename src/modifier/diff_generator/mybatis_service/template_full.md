@@ -66,7 +66,6 @@ You have to modify source codes depending on each thpe of the information :
 -- That could be done mainly with calling getters of DTO/DAO instances in the service layer. You have to decide the best way to do it by investigating existing codes.
 - Example: `String date = dto.getDob()` → `String date = k_sign.CryptoService.decrypt(dto.getDob(), P30, K_SIGN_DOB)`
 
-
 ### 4. Layer-Specific Modification Strategy
 
 **Priority: Service Layer**
@@ -86,38 +85,13 @@ You have to modify source codes depending on each thpe of the information :
 - Comments, logging statements, or validation logic
 
 
-### 5. Unified Diff Output Format Requirements
-You should generate the output as 'unified diff' format for the changes you made.
-You must use following rules to generate it strictly.
+### 5. Output Requirements
 
-**STRICT RULES for unified diff format:**
-
---- a/path/to/OriginalFile.java
-+++ b/path/to/OriginalFile.java
-@@ -startLine,contextLines +startLine,contextLines @@
-unchanged line
--removed or old line
-+added or new line
-unchanged line
+If there is change that you applied in the input source file, you have to generate full input file with the changed lines that you made.
+Please make sure that the rest of the codes must remain unchanged except for the changes that you made.
 
 
-**Critical diff generation rules:**
-1. Include 3 lines of context before and after each change
-2. Line numbers must be EXACTLY correct - verify against original source
-3. Removed lines (-) must match original source EXACTLY (whitespace, indentation, content)
-4. Added lines (+) show the new modified version
-5. Unchanged context lines have no prefix (single space at start)
-6. Multiple changes in same file should be separate hunks
-7. File path must match the provided source file path exactly
-
-**Common mistakes to AVOID:**
-- ❌ Incorrect line numbers in @@ headers
-- ❌ Modified lines that don't exist in original source
-- ❌ Missing or incorrect indentation/whitespace
-- ❌ Changing unrelated code in the diff
-- ❌ Including entire methods when only 1-2 lines changed
-
-### 6. Output JSON Structure
+### 6. Output Format Requirements
 **Output Format**
 The response must be strictly returned in a JSON array with this exact structure as like below.
 {
@@ -125,18 +99,18 @@ The response must be strictly returned in a JSON array with this exact structure
     {
       "file_path": "Absolute path of the file (e.g., /Users/jihun.kim/Documents/src/book-ssm/src/com/mybatis/dao/EmployeeMapper.java)",
       "reason": "Briefly explain the reason for the modification or why modification is not required",
-      "unified_diff": "If the source is modified, this should contain the change that you made as unified diff format as described previously. If it not modifed, this should be empty string."
+      "unified_diff": "If the source is modified, this should contain FULL java source content with the changes you made. Note that It's not just diff content. If it not modifed, this should be empty string."
     }
   ]
 } 
-The 'modification'key must contain the same number of input source files in its list.
-If each source is modified, ensure that corresponding "unified_diff" contains the entire changed lines without being cut off, using as many output tokens as possible.
+The 'modification' should keep the same number of input source files in its list.
+Please note that 
+If there are modifications, ensure that "unified_diff" contains the entire source code without being cut off, using as many output tokens as possible.
 Please make sure that you created correct JSON format before you returned the output.
 
 **Critical import point**
 You must generate "modification" key. This can not be omitted.
 Do not generate any other comments, contents, words except for "modifications".
-
 
 ## Few-shot Examples
 
