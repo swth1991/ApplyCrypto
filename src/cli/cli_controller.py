@@ -364,9 +364,7 @@ class CLIController:
             sql_extraction_results = sql_extractor.extract_from_files(source_files)
             print(f"  ✓ {len(sql_extraction_results)}개의 파일에서 SQL을 추출했습니다.")
 
-            total_sql_queries = sum(
-                len(r.get("sql_queries", [])) for r in sql_extraction_results
-            )
+            total_sql_queries = sum(len(r.sql_queries) for r in sql_extraction_results)
             print(f"  ✓ 총 {total_sql_queries}개의 SQL 쿼리를 추출했습니다.")
             self.logger.info(
                 f"SQL 추출 완료: {len(sql_extraction_results)}개 파일, {total_sql_queries}개 쿼리"
@@ -379,7 +377,8 @@ class CLIController:
 
             # SQL 추출 결과 저장 (xml_parse_results.json 대신)
             persistence_manager.save_to_file(
-                sql_extraction_results, "sql_extraction_results.json"
+                [r.to_dict() for r in sql_extraction_results],
+                "sql_extraction_results.json",
             )
 
             # Call Graph 저장 (endpoint별 call tree 포함)
