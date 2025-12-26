@@ -38,10 +38,8 @@ from models.source_file import SourceFile
 from models.table_access_info import TableAccessInfo
 from modifier.code_modifier import CodeModifier
 from persistence.cache_manager import CacheManager
-from persistence.data_persistence_manager import (
-    DataPersistenceManager,
-    PersistenceError,
-)
+from persistence.data_persistence_manager import (DataPersistenceManager,
+                                                  PersistenceError)
 
 
 class CLIController:
@@ -461,7 +459,8 @@ class CLIController:
             sql_extraction_results = []
             if args.cached:
                 try:
-                    from models.sql_extraction_output import SQLExtractionOutput
+                    from models.sql_extraction_output import \
+                        SQLExtractionOutput
 
                     sql_extraction_data = persistence_manager.load_from_file(
                         "sql_extraction_results.json", SQLExtractionOutput
@@ -1080,25 +1079,21 @@ class CLIController:
                     if "method_signature" in tree:
                         if find_method_in_tree(tree, endpoint):
                             matching_trees.append(tree)
-
                 if matching_trees:
                     print(
                         f"\n메서드 '{endpoint}'가 사용되는 {len(matching_trees)}개의 호출 그래프를 찾았습니다:"
                     )
                     print("=" * 60)
-
                     for idx, tree in enumerate(matching_trees, 1):
                         endpoint_info = tree.get("endpoint", {})
                         endpoint_method = endpoint_info.get("method_signature", "")
                         endpoint_path = endpoint_info.get("path", "")
                         endpoint_http = endpoint_info.get("http_method", "")
-
                         print(
                             f"\n[{idx}/{len(matching_trees)}] 엔드포인트: {endpoint_http} {endpoint_path}"
                         )
                         print(f"Method: {endpoint_method}")
                         print("-" * 60)
-
                         # 트리를 출력하기 위해 해당 endpoint로 call_graph에서 출력
                         if endpoint_method:
                             # endpoint 객체 찾기
@@ -1165,16 +1160,13 @@ class CLIController:
             marker = "└─ " if is_last else "├─ "
             circular_marker = " (recursive/circular)" if is_circular else ""
             highlight = " >>> " if target_method in method_sig else ""
-
             print(f"{prefix}{marker}{method_sig} [{layer}]{highlight}{circular_marker}")
-
         # 자식 노드 출력
         children = tree.get("children", [])
         for i, child in enumerate(children):
             is_last_child = i == len(children) - 1
             # extension = "   " if is_last else "│  "
             # new_prefix = prefix + extension if indent > 0 else ""
-
             self._print_tree_structure(child, target_method, indent + 1, is_last_child)
 
     def _print_diff(self, file_path: str, diff: str):
