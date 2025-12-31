@@ -5,13 +5,13 @@ from typing import List, Dict
 from pathlib import Path
 from collections import defaultdict
 
-from modifier.context_generator.base_context_generator import ContextGenerator
+from modifier.context_generator.base_context_generator import BaseContextGenerator
 from models.modification_context import ModificationContext
 from models.table_access_info import TableAccessInfo
 
 logger = logging.getLogger("applycrypto.context_generator")
 
-class MybatisContextGenerator(ContextGenerator):
+class MybatisContextGenerator(BaseContextGenerator):
     """
     Mybatis Context Generator
 
@@ -48,8 +48,9 @@ class MybatisContextGenerator(ContextGenerator):
         
         # Regex to capture the Entity Name
         # Convention: [name]Service.java, [name]ServiceImpl.java, 
-        # [name]Controller.java, [name]Repository.java, [name]Dao.java
-        pattern = re.compile(r"^(?P<name>.*?)(?:Service|ServiceImpl|Controller|Repository|Dao)\.java$")
+        # [name]Controller.java, [name]Repository.java, [name]Dao.java,
+        # [name]Mapper.java, [name]-mapper.xml
+        pattern = re.compile(r"^(?P<name>.*?)(?:(?:Service|ServiceImpl|Controller|Repository|Dao|Mapper|VO)\.java|-mapper\.xml)$")
 
         for file_path in all_file_paths:
             filename = os.path.basename(file_path)
