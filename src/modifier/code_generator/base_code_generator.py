@@ -11,6 +11,7 @@ from jinja2 import Template
 
 from config.config_manager import Configuration
 from models.code_generator import CodeGeneratorInput, CodeGeneratorOutput
+from models.modification_context import ModificationContext
 from models.modification_plan import ModificationPlan
 from models.table_access_info import TableAccessInfo
 from modifier.llm.llm_provider import LLMProvider
@@ -124,19 +125,27 @@ class BaseCodeGenerator(ABC):
         Returns:
             str: 생성된 프롬프트
         """
-        source_files_str = "\n\n".join(
-            [
-                f"=== File: {Path(snippet.path).name} ===\n{snippet.content}"
-                for snippet in input_data.code_snippets
-            ]
-        )
+        snippets = []
+        for file_path in input_data.file_paths:
+            try:
+                path_obj = Path(file_path)
+                if path_obj.exists():
+                    with open(path_obj, "r", encoding="utf-8") as f:
+                        content = f.read()
+                    snippets.append(f"=== File: {path_obj.name} ===\n{content}")
+                else:
+                    logger.warning(f"File not found: {file_path}")
+            except Exception as e:
+                logger.error(f"Failed to read file for prompt: {file_path} - {e}")
+
+        source_files_str = "\n\n".join(snippets)
 
         # 배치 프롬프트 생성
         batch_variables = {
             "table_info": input_data.table_info,
             "layer_name": input_data.layer_name,
             "source_files": source_files_str,
-            "file_count": len(input_data.code_snippets),
+            "file_count": len(input_data.file_paths),
             **(input_data.extra_variables or {}),
         }
 
@@ -175,9 +184,7 @@ class BaseCodeGenerator(ABC):
             
             content = content.strip()
 
-            # 구분자 기반 형식 시도
-            if "=====FILE=====" in content:
-                return self._parse_delimited_format(content, file_mapping)
+            return self._parse_delimited_format(content, file_mapping)
              
         except Exception as e:
             logger.error(f"LLM 응답 파싱 실패: {e}")
@@ -298,14 +305,14 @@ class BaseCodeGenerator(ABC):
         pass
 
     @abstractmethod
-    def generate_modification_plans(
-        self, table_access_info: TableAccessInfo
+    def generate_modification_plan(
+        self, modification_context: ModificationContext
     ) -> List[ModificationPlan]:
         """
-        수정 계획을 생성합니다.
+        수정 계획을 생성합니다 (단일 컨텍스트).
 
         Args:
-            table_access_info: 테이블 접근 정보
+            modification_context: 수정 컨텍스트
 
         Returns:
             List[ModificationPlan]: 수정 계획 리스트

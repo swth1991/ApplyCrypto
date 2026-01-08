@@ -10,6 +10,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from tqdm import tqdm
 
 try:
     from tabulate import tabulate
@@ -159,11 +160,7 @@ class CLIController:
             action="store_true",
             help="실제 파일 수정 없이 미리보기만 수행합니다",
         )
-        modify_parser.add_argument(
-            "--all",
-            action="store_true",
-            help="사용자 확인 없이 모든 변경사항을 자동으로 적용합니다",
-        )
+
 
         # clear 명령어 서브파서
         clear_parser = subparsers.add_parser(
@@ -1167,31 +1164,7 @@ class CLIController:
             # new_prefix = prefix + extension if indent > 0 else ""
             self._print_tree_structure(child, target_method, indent + 1, is_last_child)
 
-    def _print_diff(self, file_path: str, diff: str):
-        """Diff 내용을 컬러로 출력 (간단 구현)"""
-        # print(f"\n[Diff] {file_path}")
-        # print("-" * 80)
-        # for line in diff.splitlines():
-        #     if line.startswith("+"):
-        #         print(f"\033[92m{line}\033[0m")  # Green
-        #     elif line.startswith("-"):
-        #         print(f"\033[91m{line}\033[0m")  # Red
-        #     elif line.startswith("@@"):
-        #         print(f"\033[96m{line}\033[0m")  # Cyan
-        #     else:
-        #         print(line)
-        # print("-" * 80)
-        print(f"\n[수정된 파일] {file_path}")
 
-    def _get_user_confirmation(self) -> str:
-        """사용자 확인 입력"""
-        while True:
-            choice = input(
-                "\n이 변경사항을 적용하시겠습니까? [y/n/a/q] (y:적용, n:건너뛰기, a:모두적용, q:중단): "
-            ).lower()
-            if choice in ["y", "n", "a", "q"]:
-                return choice
-            print("잘못된 입력입니다.")
 
     def _handle_modify(self, args: argparse.Namespace) -> int:
         """
@@ -1263,7 +1236,6 @@ class CLIController:
             total_success = 0
             total_failed = 0
             total_skipped = 0
-            apply_all = args.all
 
             for table_info in table_access_info_list:
                 print(f"\n  테이블 '{table_info.table_name}' 처리 중...")
@@ -1271,65 +1243,47 @@ class CLIController:
                 # 트래킹 시작 (테이블 단위)
                 code_modifier.result_tracker.start_tracking()
 
-                # 1. 계획 생성
-                try:
-                    plans = code_modifier.generate_modification_plans(table_info)
-                except Exception as e:
-                    self.logger.error(f"계획 생성 실패: {e}")
-                    print(f"    ✗ 계획 생성 실패: {e}")
-                    total_failed += len(table_info.access_files)  # 대략적인 수치
-                    continue
-
                 table_modifications = []
 
-                # 2. 계획 적용 (Interactive loop)
-                for plan in plans:
-                    if plan.status in ["failed", "skipped"]:
-                        # 이미 실패/스킵된 계획은 그대로 적용(기록)
-                        res = code_modifier.apply_modification_plan(
-                            plan, dry_run=args.dry_run
-                        )
-                        table_modifications.append(res)
-                        if plan.status == "failed":
-                            total_failed += 1
-                        else:
-                            total_skipped += 1
-                        continue
+                # 1. 컨텍스트 생성
+                contexts = code_modifier.generate_contexts(table_info)
+                if not contexts:
+                    print(f"    ✗ 테이블 '{table_info.table_name}' 컨텍스트 생성 실패 (결과 없음)")
+                    continue
 
-                    # Diff 출력 및 사용자 확인
-                    if not apply_all:
-                        self._print_diff(plan.file_path, plan.unified_diff)
-                        choice = self._get_user_confirmation()
+                # 2. 계획 생성 및 적용
+                for context in tqdm(contexts, desc="파일 수정 처리 중", unit="file"):
+                    try:
+                        # 계획 생성 (단일 컨텍스트)
+                        context_plans = code_modifier.generate_plan(context)
+                        if not context_plans:
+                            continue
 
-                        if choice == "q":
-                            print("작업을 중단합니다.")
-                            return 0
-                        elif choice == "a":
-                            apply_all = True
-                        elif choice == "n":
-                            print("  -> 건너뜀")
-                            # 스킵 기록
-                            plan.status = "skipped"
-                            plan.reason = "User skipped"
-                            res = code_modifier.apply_modification_plan(
+                        # 생성된 계획 즉시 적용
+                        for plan in context_plans:
+                            # 적용 (이미 실패/스킵된 계획도 내부적으로 처리됨)
+                            res = code_modifier.apply_plan(
                                 plan, dry_run=args.dry_run
                             )
                             table_modifications.append(res)
-                            total_skipped += 1
-                            continue
 
-                    # 적용
-                    res = code_modifier.apply_modification_plan(
-                        plan, dry_run=args.dry_run
-                    )
-                    table_modifications.append(res)
+                            status = res.get("status")
+                            if status == "success":
+                                print(f"  -> 적용 완료: {Path(plan.file_path).name}")
+                                total_success += 1
+                            elif status == "skipped":
+                                total_skipped += 1
+                            elif status == "failed":
+                                # 이미 실패 상태로 넘어온 경우 출력 생략 혹은 간단히 출력
+                                if plan.status != "failed": 
+                                    print(f"  -> 실패: {res.get('error')}")
+                                total_failed += 1
 
-                    if res.get("status") == "success":
-                        print(f"  -> 적용 완료: {Path(plan.file_path).name}")
-                        total_success += 1
-                    else:
-                        print(f"  -> 실패: {res.get('error')}")
+                    except Exception as e:
+                        self.logger.error(f"파일 처리 중 오류: {e}")
+                        print(f"    ✗ 파일 처리 중 오류: {e}")
                         total_failed += 1
+                        continue
 
                 # 결과 추적 및 저장 (테이블 단위)
                 code_modifier.result_tracker.end_tracking()
@@ -1390,7 +1344,7 @@ class CLIController:
             self.logger.info("Type Handler Generator 초기화...")
             generator = TypeHandlerGenerator(config)
 
-            return generator.execute(dry_run=args.dry_run, apply_all=args.all)
+            return generator.execute(dry_run=args.dry_run, apply_all=True)
 
         except ImportError as e:
             self.logger.error(f"Type Handler Generator 모듈을 로드할 수 없습니다: {e}")
@@ -1489,7 +1443,7 @@ class CLIController:
                 table_access_info_list=table_access_info_list,
                 call_graph_data=call_graph_data,
                 dry_run=args.dry_run,
-                apply_all=args.all,
+                apply_all=True,
             )
 
             # 결과 출력
