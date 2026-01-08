@@ -48,9 +48,9 @@ class MybatisContextGenerator(BaseContextGenerator):
         
         # Regex to capture the Entity Name
         # Convention: [name]Service.java, [name]ServiceImpl.java, 
-        # [name]Controller.java, [name]Repository.java, [name]Dao.java,
-        # [name]Mapper.java, [name]-mapper.xml
-        pattern = re.compile(r"^(?P<name>.*?)(?:(?:Service|ServiceImpl|Controller|Repository|Dao|Mapper|VO)\.java|-mapper\.xml)$")
+        # [name]Controller.java, [name]Repository.java, [name]Dao.java
+        # pattern = re.compile(r"^(?P<name>.*?)(?:Service|ServiceImpl|Controller|Repository|Dao)\.java$")
+        pattern = re.compile(r"^(?P<name>.*?)(?:Service|ServiceImpl|Controller)\.java$")
 
         for file_path in all_file_paths:
             filename = os.path.basename(file_path)
@@ -61,7 +61,7 @@ class MybatisContextGenerator(BaseContextGenerator):
             else:
                 # If it doesn't match the convention, treat it as its own group
                 # using the filename as the key.
-                files_by_name[filename].append(file_path)
+                files_by_name["others"].append(file_path)
 
         logger.info(f"Grouped files into {len(files_by_name)} entity contexts.")
 
@@ -71,6 +71,8 @@ class MybatisContextGenerator(BaseContextGenerator):
         
         for name in sorted_names:
             paths = files_by_name[name]
+            if name == "others":
+                continue
             
             # Deduplicate paths just in case
             paths = sorted(list(set(paths)))
