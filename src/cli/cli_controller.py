@@ -364,7 +364,7 @@ class CLIController:
             cache_manager = persistence_manager.cache_manager or CacheManager()
 
             # 1. 소스 파일 수집
-            print("  [1/5] 소스 파일 수집 중...")
+            print("  [1/6] 소스 파일 수집 중...")
             self.logger.info("소스 파일 수집 시작")
 
             source_files = []
@@ -408,7 +408,7 @@ class CLIController:
             java_parser = JavaASTParser(cache_manager=cache_manager)
 
             # 2. Java AST 파싱 및 Call Graph 생성 (파싱 결과 재사용을 위해 먼저 수행)
-            print("  [2/5] Java AST 파싱 및 Call Graph 생성 중...")
+            print("  [2/6] Java AST 파싱 및 Call Graph 생성 중...")
             self.logger.info("Java AST 파싱 및 Call Graph 생성 시작")
 
             java_files = [f.path for f in source_files if f.extension == ".java"]
@@ -416,7 +416,11 @@ class CLIController:
             # EndpointExtractionStrategy 생성
             from parser.endpoint_strategy import EndpointExtractionStrategyFactory
 
-            framework_type = config.framework_type if hasattr(config, "framework_type") else "SpringMVC"
+            framework_type = (
+                config.framework_type
+                if hasattr(config, "framework_type")
+                else "SpringMVC"
+            )
             endpoint_strategy = EndpointExtractionStrategyFactory.create(
                 framework_type=framework_type,
                 java_parser=java_parser,
@@ -461,7 +465,7 @@ class CLIController:
             )
 
             # 3. SQL 추출
-            print("  [3/5] SQL 추출 중...")
+            print("  [3/6] SQL 추출 중...")
             self.logger.info("SQL 추출 시작")
 
             xml_parser = XMLMapperParser()  # Step 5를 위해 필요
@@ -536,7 +540,7 @@ class CLIController:
             persistence_manager.save_to_file(call_graph_data, "call_graph.json")
 
             # 5. DB 접근 정보 분석
-            print("  [5/5] DB 접근 정보 분석 중...")
+            print("  [5/6] DB 접근 정보 분석 중...")
             self.logger.info("DB 접근 정보 분석 시작")
 
             db_analyzer = DBAccessAnalyzer(
@@ -558,12 +562,40 @@ class CLIController:
                 "table_access_info.json",
             )
 
+            # 6. 엔드포인트별 접근 정보 분석
+            print("  [6/6] 엔드포인트별 접근 정보 분석 중...")
+            self.logger.info("엔드포인트별 접근 정보 분석 시작")
+
+            endpoint_access_info = self._build_endpoint_access_info(
+                call_graph_data=call_graph_data,
+                sql_extraction_results=[r.to_dict() for r in sql_extraction_results],
+                table_access_info_list=table_access_info_list,
+            )
+            print(
+                f"  ✓ {len(endpoint_access_info)}개의 엔드포인트 접근 정보를 분석했습니다."
+            )
+            self.logger.info(
+                f"엔드포인트별 접근 정보 분석 완료: {len(endpoint_access_info)}개"
+            )
+
+            # 엔드포인트별 접근 정보 저장 (JSON)
+            persistence_manager.save_to_file(
+                endpoint_access_info,
+                "endpoint_access_info.json",
+            )
+
+            # 엔드포인트별 접근 정보 리포트 생성 (TXT)
+            report_path = persistence_manager.output_dir / "endpoint_access_report.txt"
+            self._generate_endpoint_access_report(endpoint_access_info, report_path)
+            print(f"  ✓ 엔드포인트 접근 리포트가 생성되었습니다: {report_path.name}")
+
             print("\n분석이 완료되었습니다.")
             print(f"  - 수집된 파일: {len(source_files)}개")
             print(f"  - Java 파일: {len(java_parse_results)}개")
             print(f"  - SQL 추출 파일: {len(sql_extraction_results)}개")
             print(f"  - 엔드포인트: {len(endpoints)}개")
             print(f"  - 테이블 접근 정보: {len(table_access_info_list)}개")
+            print(f"  - 엔드포인트별 접근 정보: {len(endpoint_access_info)}개")
             self.logger.info("프로젝트 분석 완료")
             return 0
 
@@ -574,6 +606,279 @@ class CLIController:
             self.logger.exception(f"analyze 명령어 실행 중 오류: {e}")
             print(f"오류: {e}", file=sys.stderr)
             return 1
+
+    def _build_endpoint_access_info(
+        self,
+        call_graph_data: Dict[str, Any],
+        sql_extraction_results: List[Dict[str, Any]],
+        table_access_info_list: List[TableAccessInfo],
+    ) -> List[Dict[str, Any]]:
+        """
+        각 엔드포인트별 전체 접근 경로 정보 수집
+
+        call_graph의 call_trees를 순회하면서 각 엔드포인트가 접근하는
+        모든 파일, XML 파일, 테이블 정보를 수집합니다.
+
+        Args:
+            call_graph_data: call_graph.json 데이터
+            sql_extraction_results: SQL 추출 결과
+            table_access_info_list: 테이블 접근 정보 목록
+
+        Returns:
+            List[Dict[str, Any]]: 엔드포인트별 접근 정보 목록
+        """
+        endpoint_access_list = []
+
+        # call_trees에서 각 엔드포인트 정보 순회
+        call_trees = call_graph_data.get("call_trees", [])
+
+        # XML 파일 경로별 쿼리 매핑 생성
+        xml_file_queries: Dict[str, List[Dict[str, Any]]] = {}
+        for result in sql_extraction_results:
+            file_info = result.get("file", {})
+            file_path = file_info.get("path", "")
+            if file_path.endswith(".xml"):
+                if file_path not in xml_file_queries:
+                    xml_file_queries[file_path] = []
+                xml_file_queries[file_path].extend(result.get("sql_queries", []))
+
+        # 관심 테이블에 접근하는 쿼리 id 목록 수집 (table_access_info에서)
+        target_query_ids: set = set()
+        for table_info in table_access_info_list:
+            for sql_query in table_info.sql_queries:
+                query_id = sql_query.get("id", "")
+                if query_id:
+                    target_query_ids.add(query_id)
+
+        for tree in call_trees:
+            endpoint_info = tree.get("endpoint", {})
+            if not endpoint_info:
+                continue
+
+            # 트리를 순회하며 접근 파일 및 메서드 수집
+            accessed_files: List[Dict[str, Any]] = []
+            xml_files_accessed: List[Dict[str, Any]] = []
+            tables_accessed: set = set()
+            visited_files: set = set()
+            visited_xml_files: set = set()
+            visited_method_names: set = set()  # 호출되는 메서드명 수집 (쿼리 id 매칭용)
+
+            def traverse_tree(node: Dict[str, Any]) -> None:
+                """재귀적으로 트리를 순회하며 파일 정보 수집"""
+                method_sig = node.get("method_signature", "")
+                file_path = node.get("file_path", "")
+                class_name = node.get("class_name", "")
+
+                # 메서드명 수집 (예: RecordMapper.getRecordsByPage -> getRecordsByPage)
+                if method_sig and "." in method_sig:
+                    method_name = method_sig.split(".")[-1]
+                    visited_method_names.add(method_name)
+
+                if file_path and file_path not in visited_files:
+                    visited_files.add(file_path)
+                    accessed_files.append(
+                        {
+                            "file_path": file_path,
+                            "class_name": class_name,
+                            "method_signature": method_sig,
+                        }
+                    )
+
+                # 자식 노드 순회
+                for child in node.get("children", []):
+                    traverse_tree(child)
+
+            # 루트 노드부터 순회
+            traverse_tree(tree)
+
+            # 접근한 파일에서 클래스명 추출 (Mapper 인터페이스와 XML namespace 매칭용)
+            visited_class_names: set = set()
+            for accessed_file in accessed_files:
+                class_name = accessed_file.get("class_name", "")
+                if class_name:
+                    visited_class_names.add(class_name)
+
+            # SQL 추출 결과에서 해당 Mapper와 연결된 XML 파일 찾기
+            for result in sql_extraction_results:
+                file_info = result.get("file", {})
+                xml_file_path = file_info.get("path", "")
+
+                # XML 파일인 경우에만 처리
+                if not xml_file_path.endswith(".xml"):
+                    continue
+
+                # 해당 XML의 SQL 쿼리들 중 실제로 호출되고 관심 테이블에 접근하는 것만 찾기
+                matching_queries = []
+                for sql_query in result.get("sql_queries", []):
+                    strategy_specific = sql_query.get("strategy_specific", {})
+                    namespace = strategy_specific.get("namespace", "")
+                    query_id = sql_query.get("id", "")
+
+                    # namespace에서 클래스명 추출 (예: com.mybatis.dao.EmployeeMapper -> EmployeeMapper)
+                    if namespace:
+                        mapper_class_name = namespace.split(".")[-1]
+
+                        # 매칭 조건:
+                        # 1. 접근한 클래스 중에 이 Mapper가 있고
+                        # 2. 쿼리 id가 호출된 메서드명과 일치하고
+                        # 3. 쿼리 id가 관심 테이블 쿼리 목록에 있어야 함
+                        if (
+                            mapper_class_name in visited_class_names
+                            and query_id in visited_method_names
+                            and query_id in target_query_ids
+                        ):
+                            # 필요한 필드만 추출: id, query_type, sql
+                            matching_queries.append(
+                                {
+                                    "id": query_id,
+                                    "query_type": sql_query.get("query_type", ""),
+                                    "sql": sql_query.get("sql", ""),
+                                }
+                            )
+
+                            # 테이블명 추출 (tables 필드 또는 sql에서 추출)
+                            tables = sql_query.get("tables", [])
+                            if tables:
+                                tables_accessed.update(tables)
+
+                # 매칭되는 쿼리가 있으면 XML 파일 추가
+                if matching_queries and xml_file_path not in visited_xml_files:
+                    visited_xml_files.add(xml_file_path)
+                    xml_files_accessed.append(
+                        {"file_path": xml_file_path, "queries": matching_queries}
+                    )
+
+            # 테이블 접근 정보에서 해당 엔드포인트가 접근하는 테이블 찾기
+            for table_info in table_access_info_list:
+                # 접근 파일 중 하나라도 테이블 접근 파일에 포함되면
+                if visited_files.intersection(set(table_info.access_files)):
+                    tables_accessed.add(table_info.table_name)
+
+            # 관심 테이블에 접근하는 엔드포인트만 결과에 포함
+            if tables_accessed:
+                endpoint_access_list.append(
+                    {
+                        "endpoint": endpoint_info,
+                        "accessed_files": accessed_files,
+                        "xml_files": xml_files_accessed,
+                        "tables_accessed": sorted(list(tables_accessed)),
+                        "total_files_count": len(accessed_files),
+                        "total_xml_files_count": len(xml_files_accessed),
+                    }
+                )
+
+        return endpoint_access_list
+
+    def _generate_endpoint_access_report(
+        self,
+        endpoint_access_info: List[Dict[str, Any]],
+        output_path: Path,
+    ) -> None:
+        """
+        엔드포인트별 접근 정보를 사람이 읽기 쉬운 형식으로 txt 파일에 출력
+
+        Args:
+            endpoint_access_info: 엔드포인트별 접근 정보 목록
+            output_path: 출력 파일 경로
+        """
+        lines = []
+        separator = "=" * 80
+
+        lines.append(separator)
+        lines.append("엔드포인트별 접근 정보 리포트")
+        lines.append(f"총 {len(endpoint_access_info)}개 엔드포인트")
+        lines.append(separator)
+        lines.append("")
+
+        for idx, ep_info in enumerate(endpoint_access_info, 1):
+            endpoint = ep_info.get("endpoint", {})
+            accessed_files = ep_info.get("accessed_files", [])
+            xml_files = ep_info.get("xml_files", [])
+            tables = ep_info.get("tables_accessed", [])
+
+            # 엔드포인트 헤더
+            http_method = endpoint.get("http_method", "")
+            path = endpoint.get("path", "")
+            method_sig = endpoint.get("method_signature", "")
+
+            lines.append(separator)
+            lines.append(f"[{idx}] {http_method} {path}")
+            lines.append(f"    Entry Point: {method_sig}")
+            lines.append(separator)
+
+            # Call Tree 형식으로 접근 파일 출력
+            lines.append("")
+            lines.append("호출 경로 (Call Tree):")
+            lines.append("")
+
+            for i, file_info in enumerate(accessed_files):
+                is_last = i == len(accessed_files) - 1
+                prefix = "└── " if is_last else "├── "
+                class_name = file_info.get("class_name", "")
+                method_signature = file_info.get("method_signature", "")
+
+                # 메서드명만 추출
+                if "." in method_signature:
+                    method_name = method_signature.split(".")[-1]
+                else:
+                    method_name = method_signature
+
+                lines.append(f"    {prefix}{class_name}.{method_name}")
+
+                # 파일 경로 (간략화)
+                file_path = file_info.get("file_path", "")
+                if file_path:
+                    # 파일명만 추출
+                    filename = file_path.split("/")[-1]
+                    indent = "        " if is_last else "│       "
+                    lines.append(f"    {indent}({filename})")
+
+            # XML 파일 및 쿼리 정보
+            if xml_files:
+                lines.append("")
+                lines.append("XML Mapper 파일:")
+                lines.append("")
+
+                for xml_info in xml_files:
+                    xml_path = xml_info.get("file_path", "")
+                    queries = xml_info.get("queries", [])
+
+                    # XML 파일명만 추출
+                    xml_filename = xml_path.split("/")[-1]
+                    lines.append(f"    └── {xml_filename}")
+
+                    for j, query in enumerate(queries):
+                        is_last_query = j == len(queries) - 1
+                        query_prefix = (
+                            "        └── " if is_last_query else "        ├── "
+                        )
+                        query_id = query.get("id", "")
+                        query_type = query.get("query_type", "")
+                        sql = query.get("sql", "")
+
+                        lines.append(f"{query_prefix}{query_id} ({query_type})")
+
+                        # SQL 출력 (줄바꿈 처리 및 길이 제한)
+                        sql_clean = " ".join(sql.split())  # 줄바꿈 제거
+                        if len(sql_clean) > 80:
+                            sql_display = sql_clean[:77] + "..."
+                        else:
+                            sql_display = sql_clean
+
+                        sql_indent = "            " if is_last_query else "        │   "
+                        lines.append(f"{sql_indent}SQL: {sql_display}")
+
+            # 테이블 정보
+            if tables:
+                lines.append("")
+                lines.append(f"접근 테이블: {', '.join(tables)}")
+
+            lines.append("")
+            lines.append("")
+
+        # 파일에 쓰기
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines))
 
     def _handle_list(self, args: argparse.Namespace) -> int:
         """
@@ -983,7 +1288,9 @@ class CLIController:
                         )
                         java_parser = JavaASTParser(cache_manager=cache_manager)
                         # EndpointExtractionStrategy 생성
-                        from parser.endpoint_strategy import EndpointExtractionStrategyFactory
+                        from parser.endpoint_strategy import (
+                            EndpointExtractionStrategyFactory,
+                        )
 
                         # framework_type 기본값 사용 (config 로드 없이)
                         framework_type = "SpringMVC"  # 기본값

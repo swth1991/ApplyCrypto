@@ -53,7 +53,7 @@ class DBAccessAnalyzer:
         self.call_graph_builder = call_graph_builder
         self.class_info_map = self.call_graph_builder.get_class_info_map()
         self.logger = logging.getLogger(__name__)
-        
+
         # 설정에서 테이블 정보 가져오기
         self.access_tables = config.access_tables
 
@@ -63,7 +63,7 @@ class DBAccessAnalyzer:
         self.table_column_info: Dict[
             str, Dict[str, Dict[str, Any]]
         ] = {}  # table_name -> {column_name: {"new_column": bool}}
-        
+
         # SQL 추출 결과 (analyze 메서드에서 로드)
         self.sql_extraction_results: List[Dict[str, Any]] = []
 
@@ -125,11 +125,7 @@ class DBAccessAnalyzer:
                 continue
 
             # 테이블별 접근 정보 수집
-            table_info = self._analyze_table_access(
-                table_name,
-                columns,
-                source_files
-            )
+            table_info = self._analyze_table_access(table_name, columns, source_files)
 
             if table_info:
                 table_access_info_list.append(table_info)
@@ -137,10 +133,7 @@ class DBAccessAnalyzer:
         return table_access_info_list
 
     def _analyze_table_access(
-        self,
-        table_name: str,
-        columns: Set[str],
-        source_files: List[SourceFile]
+        self, table_name: str, columns: Set[str], source_files: List[SourceFile]
     ) -> Optional[TableAccessInfo]:
         """
         특정 테이블에 대한 접근 정보 분석
@@ -154,7 +147,7 @@ class DBAccessAnalyzer:
         Returns:
             Optional[TableAccessInfo]: 테이블 접근 정보
         """
-        
+
         # 수집된 정보
         sql_queries: List[Dict[str, Any]] = []
         interface_files: Set[str] = set()
@@ -186,15 +179,19 @@ class DBAccessAnalyzer:
 
             # 각 SQL 쿼리에 대해 처리
             for sql_query_info in matching_queries:
-                sql_queries.append(sql_query_info)
+                enriched_query = dict(sql_query_info)
+                enriched_query["source_file_path"] = file_path
+                sql_queries.append(enriched_query)
 
                 # sql query에서 사용되는 클래스 파일 경로 정보 추출 (sql_wrapping_type에 따라 다름 )
-                method_string, query_layer_files, query_added_files = self.sql_extractor.get_class_files_from_sql_query(sql_query_info)
+                method_string, query_layer_files, query_added_files = (
+                    self.sql_extractor.get_class_files_from_sql_query(enriched_query)
+                )
 
                 if query_layer_files:
                     for layer, files in query_layer_files.items():
                         layer_files[layer].update(files)
-                    
+
                 if query_added_files:
                     all_added_files.update(query_added_files)
 
@@ -315,7 +312,7 @@ class DBAccessAnalyzer:
         matching_queries = []
 
         # TODO: 김한섭 부장님 수정한 코드 확인할 것.
-        
+
         for sql_query_info in sql_queries:
             sql = sql_query_info.get("sql", "")
             if not sql:
@@ -328,22 +325,24 @@ class DBAccessAnalyzer:
 
             # SQL에서 칼럼 추출
             sql_columns = self.sql_extractor.extract_column_names(sql, table_name)
-            
+
             # sql_columns가 비어있고 SELECT * FROM 패턴인 경우 false_columns로 설정
             if not sql_columns:
                 # SELECT ~ FROM 패턴 확인 (대소문자 무시, 여러 줄 지원)
                 select_from_pattern = r"SELECT\s+(.*?)\s+FROM\s+"
-                select_match = re.search(select_from_pattern, sql, re.IGNORECASE | re.DOTALL)
+                select_match = re.search(
+                    select_from_pattern, sql, re.IGNORECASE | re.DOTALL
+                )
                 if select_match:
                     select_clause = select_match.group(1).strip()
                     # SELECT와 FROM 사이에 *가 포함되어 있는지 확인
                     if "*" in select_clause:
                         # FROM 다음 부분 확인 (서브쿼리가 아닌지)
-                        from_after = sql[select_match.end():].strip()
+                        from_after = sql[select_match.end() :].strip()
                         # FROM 다음이 (로 시작하지 않으면
                         if not from_after.startswith("("):
                             sql_columns = false_columns.copy()
-            
+
             sql_columns_lower = {c.lower() for c in sql_columns}
 
             # 규칙 2: new_column=false인 칼럼이 있으면 그 중 하나 이상 사용되는 쿼리만 포함

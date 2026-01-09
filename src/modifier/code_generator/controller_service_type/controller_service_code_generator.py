@@ -8,6 +8,8 @@ Controller/Service 레이어를 대상으로 코드 수정을 수행하는 CodeG
 import hashlib
 import json
 import logging
+import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List
 
@@ -29,6 +31,42 @@ logger = logging.getLogger("applycrypto")
 
 class ControllerOrServiceCodeGenerator(BaseCodeGenerator):
     """Controller/Service Code 생성기"""
+
+    def _save_prompt_to_file(self, prompt: str, save_dir: str = "debug_prompts") -> str:
+        """
+        프롬프트를 MD 파일로 저장 (멀티 스레드 안전)
+
+        Args:
+            prompt: 저장할 프롬프트 내용
+            save_dir: 저장 디렉토리 (프로젝트 루트 기준)
+
+        Returns:
+            str: 저장된 파일 경로
+        """
+        # 저장 디렉토리 생성 (프로젝트 루트 기준)
+        if self.config and self.config.target_project:
+            output_dir = Path(self.config.target_project) / save_dir
+        else:
+            output_dir = Path(save_dir)
+
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        # 고유한 파일명 생성: timestamp_uuid.md
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        unique_id = str(uuid.uuid4())[:8]
+        filename = f"prompt_{timestamp}_{unique_id}.md"
+
+        file_path = output_dir / filename
+
+        # 파일 저장
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(f"# LLM Prompt\n\n")
+            f.write(f"Generated at: {datetime.now().isoformat()}\n\n")
+            f.write(f"---\n\n")
+            f.write(prompt)
+
+        logger.info(f"프롬프트 저장됨: {file_path}")
+        return str(file_path)
 
     def create_file_mapping(self, input_data: CodeGeneratorInput) -> Dict[str, str]:
         """
@@ -70,6 +108,10 @@ class ControllerOrServiceCodeGenerator(BaseCodeGenerator):
 
         # LLM 호출
         try:
+            # ===== 임시: 프롬프트를 파일로 저장 =====
+            self._save_prompt_to_file(prompt)
+
+            # ===== 임시: LLM 호출 주석처리 =====
             response = self.llm_provider.call(prompt)
 
             # CodeGeneratorOutput 객체 생성
@@ -79,12 +121,10 @@ class ControllerOrServiceCodeGenerator(BaseCodeGenerator):
                 file_mapping=file_mapping,
             )
 
-            # 파싱 시도 (실패 시 무시 - CallChain 등 다른 포맷일 수 있음)
-            try:
-                output.parsed_out = self.parse_llm_response(output)
-            except Exception as e:
-                logger.debug(f"자동 Code 파싱 실패 (포맷 불일치 가능성): {e}")
-                output.parsed_out = None
+            # parsed_out을 빈 리스트로 설정 (ValueError 방지)
+            output.parsed_out = []
+
+            logger.info("프롬프트 저장 완료. LLM 호출 생략됨 (임시 모드).")
 
             # 캐시에 저장
             self._prompt_cache[cache_key] = output
