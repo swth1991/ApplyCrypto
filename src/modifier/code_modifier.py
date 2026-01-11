@@ -75,6 +75,7 @@ class CodeModifier:
         )
         self.error_handler = ErrorHandler(max_retries=config.max_retries)
         self.result_tracker = ResultTracker(self.target_project)
+        self._current_table_access_info: Optional[TableAccessInfo] = None
 
         logger.info(
             f"CodeModifier 초기화 완료: {self.llm_provider.get_provider_name()}"
@@ -176,6 +177,8 @@ class CodeModifier:
         Returns:
             List[ModificationContext]: 수정 컨텍스트 리스트
         """
+        # table_access_info를 임시로 저장 (generate_plan에서 사용하기 위해)
+        self._current_table_access_info = table_access_info
         return self.context_generator.generate(
             layer_files=table_access_info.layer_files,
             table_name=table_access_info.table_name,
@@ -194,7 +197,11 @@ class CodeModifier:
         Returns:
             List[ModificationPlan]: 수정 계획 리스트
         """
-        return self.code_generator.generate_modification_plan(modification_context)
+        # 현재 table_access_info를 전달
+        table_access_info = getattr(self, '_current_table_access_info', None)
+        return self.code_generator.generate_modification_plan(
+            modification_context, table_access_info=table_access_info
+        )
 
     def apply_plan(
         self, plan: ModificationPlan, dry_run: bool = False
