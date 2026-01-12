@@ -502,6 +502,15 @@ class CallGraphBuilder:
         """
         return self.endpoints
 
+    def get_endpoint_method_signatures(self) -> Set[str]:
+        """
+        모든 엔드포인트의 method signature를 Set으로 반환합니다.
+
+        Returns:
+            Set[str]: 엔드포인트 method signature 집합
+        """
+        return {ep.method_signature for ep in self.endpoints}
+
     def restore_from_call_trees(
         self,
         call_trees: List[Dict[str, Any]],

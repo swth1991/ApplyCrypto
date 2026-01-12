@@ -12,7 +12,6 @@ sys.path.append(str(src_dir))
 
 from config.config_manager import Configuration
 from models.table_access_info import TableAccessInfo
-from models.modification_context import CodeSnippet
 from modifier.code_generator.base_code_generator import BaseCodeGenerator
 from modifier.context_generator.jdbc_context_generator import JdbcContextGenerator
 from modifier.context_generator.mybatis_context_generator import MybatisContextGenerator
@@ -72,16 +71,20 @@ class TestContextGenerators(unittest.TestCase):
         )
 
         with patch.object(generator, '_read_files', side_effect=lambda file_paths, root: [MagicMock(path=p, content=f"Content of {Path(p).name}") for p in file_paths]):
-            contexts = generator.generate(table_access_info)
+            contexts = generator.generate(
+                layer_files=table_access_info.layer_files,
+                table_name=table_access_info.table_name,
+                columns=table_access_info.columns,
+            )
 
         print(f"Generated {len(contexts)} contexts.")
 
         for ctx in contexts:
             layer = ctx.layer
-            count = len(ctx.code_snippets)
+            count = ctx.file_count
             print(f"Context Layer: {layer}, File Count: {count}")
             # Show last up to 4 parts to give context (keyword/layer/...)
-            files = [os.path.join("...", *Path(s.path).parts[-4:]) for s in ctx.code_snippets]
+            files = [os.path.join("...", *Path(f).parts[-4:]) for f in ctx.file_paths]
             
             print(f"  Files: [")
             for f in files:
@@ -99,7 +102,7 @@ class TestContextGenerators(unittest.TestCase):
         
         found_layers = {}
         for ctx in contexts:
-            found_layers[ctx.layer] = len(ctx.code_snippets)
+            found_layers[ctx.layer] = ctx.file_count
             
         for layer, expected in expected_counts.items():
             self.assertIn(layer, found_layers, f"Missing layer '{layer}'")
@@ -163,34 +166,31 @@ class TestContextGenerators(unittest.TestCase):
             layer_files=layer_files
         )
 
-        # Mock _read_files
-        def mock_read_files(file_paths, project_root):
-            snippets = []
-            for p in file_paths:
-                snippets.append(CodeSnippet(path=p, content=f"Content of {p}"))
-            return snippets
-        
-        with patch.object(generator, '_read_files', side_effect=mock_read_files):
-            contexts = generator.generate(table_access_info)
+        with patch.object(generator, '_read_files', side_effect=lambda file_paths, root: None):
+            contexts = generator.generate(
+                layer_files=table_access_info.layer_files,
+                table_name=table_access_info.table_name,
+                columns=table_access_info.columns,
+            )
 
         print(f"Generated {len(contexts)} contexts.")
         
         for ctx in contexts:
             print(f"Context Layer (Group): {ctx.layer}")
             print(f"File Count: {ctx.file_count}")
-            for snippet in ctx.code_snippets:
+            for file_path in ctx.file_paths:
                 # Print filename (split by backslash)
-                filename = snippet.path.split(os.sep)[-1]
-                if '\\' in snippet.path and os.sep != '\\': # Handle windows paths if running on non-windows or mixed
-                     filename = snippet.path.split('\\')[-1]
-                elif '/' in snippet.path and os.sep != '/':
-                     filename = snippet.path.split('/')[-1]
+                filename = file_path.split(os.sep)[-1]
+                if '\\' in file_path and os.sep != '\\': # Handle windows paths if running on non-windows or mixed
+                     filename = file_path.split('\\')[-1]
+                elif '/' in file_path and os.sep != '/':
+                     filename = file_path.split('/')[-1]
                 
                 # Fallback to simple split if path separator is ambiguous or match exact code
-                if '\\' in snippet.path:
-                    filename = snippet.path.split('\\')[-1]
+                if '\\' in file_path:
+                    filename = file_path.split('\\')[-1]
                 else:
-                    filename = snippet.path.split('/')[-1]
+                    filename = file_path.split('/')[-1]
 
                 print(f" - {filename}") 
             print("-" * 30)
@@ -199,7 +199,7 @@ class TestContextGenerators(unittest.TestCase):
         pnt_bank_group = next((c for c in contexts if c.layer == "PntCustomersBankInfo"), None)
         self.assertIsNotNone(pnt_bank_group, "Group 'PntCustomersBankInfo' not found.")
         
-        files = [Path(s.path).name for s in pnt_bank_group.code_snippets]
+        files = [Path(f).name for f in pnt_bank_group.file_paths]
         self.assertIn("PntCustomersBankInfoService.java", files)
         self.assertIn("PntCustomersBankInfoServiceImpl.java", files)
         self.assertIn("PntCustomersBankInfoController.java", files)

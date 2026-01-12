@@ -47,7 +47,7 @@ class BaseContextGenerator(ABC):
         file_paths: List[str],
         table_name: str,
         columns: List[Dict],
-        layer: str,
+        layer: str = "",
     ) -> List[ModificationContext]:
         """
         Splits file list into batches based on token size.

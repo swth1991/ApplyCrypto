@@ -9,7 +9,7 @@ import hashlib
 import json
 import logging
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 
 
@@ -96,7 +96,7 @@ class ControllerOrServiceCodeGenerator(BaseCodeGenerator):
 
 
     def generate_modification_plan(
-        self, modification_context: ModificationContext
+        self, modification_context: ModificationContext, table_access_info: Optional[TableAccessInfo] = None
     ) -> List[ModificationPlan]:
         """
         수정 계획을 생성합니다 (단일 컨텍스트).
@@ -104,6 +104,7 @@ class ControllerOrServiceCodeGenerator(BaseCodeGenerator):
 
         Args:
             modification_context: 수정 컨텍스트
+            table_access_info: 테이블 접근 정보 (선택적)
 
         Returns:
             List[ModificationPlan]: 수정 계획 리스트
@@ -129,6 +130,9 @@ class ControllerOrServiceCodeGenerator(BaseCodeGenerator):
 
             # extra_variables 준비
             extra_vars = {"file_count": len(batch)}
+            # table_access_info가 있으면 extra_variables에 추가
+            if table_access_info:
+                extra_vars["table_access_info"] = table_access_info
 
             input_data = CodeGeneratorInput(
                 file_paths=batch,

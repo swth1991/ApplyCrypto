@@ -75,7 +75,11 @@ def test_jdbc_context_generator():
     generator._read_files = MagicMock(side_effect=lambda file_paths, root: [MagicMock(path=p, content=f"Content of {Path(p).name}") for p in file_paths])
 
     # 6. Run Generate
-    contexts = generator.generate(table_access_info)
+    contexts = generator.generate(
+        layer_files=table_access_info.layer_files,
+        table_name=table_access_info.table_name,
+        columns=table_access_info.columns,
+    )
 
     # 7. Assertions
     print(f"Generated {len(contexts)} contexts.")

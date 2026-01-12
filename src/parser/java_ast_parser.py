@@ -48,6 +48,8 @@ class ClassInfo:
     fields: List[Dict[str, Any]] = field(default_factory=list)
     methods: List[Method] = field(default_factory=list)
     file_path: str = ""
+    imports: List[str] = field(default_factory=list)
+    access_modifier: str = "package"
 
     def to_dict(self) -> Dict[str, Any]:
         """
@@ -59,6 +61,8 @@ class ClassInfo:
         return {
             "name": self.name,
             "package": self.package,
+            "access_modifier": self.access_modifier,
+            "imports": self.imports,
             "superclass": self.superclass,
             "is_interface_class": self.is_interface_class,
             "interfaces": self.interfaces,
@@ -209,6 +213,9 @@ class JavaASTParser:
         # 패키지 정보 추출
         package_name = self._extract_package(root_node)
 
+        # Import 문 추출
+        imports = self._extract_imports(root_node)
+
         # 클래스 및 인터페이스 선언 탐색
         for node in self._traverse_tree(root_node):
             if node.type == "class_declaration":
@@ -216,6 +223,7 @@ class JavaASTParser:
                     node, package_name, file_path
                 )
                 if class_info:
+                    class_info.imports = imports
                     classes.append(class_info)
             elif node.type == "interface_declaration":
                 # 인터페이스도 클래스와 동일하게 처리
@@ -224,6 +232,7 @@ class JavaASTParser:
                 )
                 if class_info:
                     class_info.is_interface_class = True
+                    class_info.imports = imports
                     classes.append(class_info)
 
         return classes
@@ -244,6 +253,54 @@ class JavaASTParser:
                     if subchild.type == "scoped_identifier":
                         return subchild.text.decode("utf8")
         return ""
+
+    def _extract_imports(self, root_node: Node) -> List[str]:
+        """
+        Import 문 추출 (package 다음에 오는 import 문만 추출)
+
+        Args:
+            root_node: 루트 노드
+
+        Returns:
+            List[str]: Import 문 목록
+        """
+        imports = []
+        
+        # package 다음에 오는 import 문만 추출
+        found_package = False
+        
+        for child in root_node.children:
+            if child.type == "package_declaration":
+                found_package = True
+                continue
+            
+            # package를 찾은 후에만 import 추출
+            if found_package and child.type == "import_declaration":
+                # import_declaration에서 scoped_identifier 추출
+                for subchild in child.children:
+                    if subchild.type == "scoped_identifier":
+                        import_name = subchild.text.decode("utf8")
+                        if import_name:
+                            imports.append(import_name)
+                    elif subchild.type == "asterisk":
+                        # static import나 wildcard import 처리
+                        # 이전 형제 노드를 찾아서 import 경로 구성
+                        prev_sibling = None
+                        for i, sibling in enumerate(child.children):
+                            if sibling.type == "asterisk":
+                                # 이전 형제가 scoped_identifier인지 확인
+                                if i > 0 and child.children[i-1].type == "scoped_identifier":
+                                    prev_sibling = child.children[i-1].text.decode("utf8")
+                                    break
+                        if prev_sibling:
+                            imports.append(f"{prev_sibling}.*")
+                        else:
+                            imports.append("*")
+                    elif subchild.type == "identifier" and subchild.text.decode("utf8") == "static":
+                        # static import 처리
+                        continue
+        
+        return imports
 
     def _parse_class_declaration(
         self, node: Node, package_name: str, file_path: Path
@@ -267,10 +324,20 @@ class JavaASTParser:
                 class_info.name = child.text.decode("utf8")
                 break
 
-        # 클래스 어노테이션 추출
+        # 클래스 어노테이션 및 접근 제어자 추출
         for child in node.children:
             if child.type == "modifiers":
                 class_info.annotations.extend(self._extract_annotations(child))
+                # 접근 제어자 추출
+                modifier_text = child.text.decode("utf8")
+                if "public" in modifier_text:
+                    class_info.access_modifier = "public"
+                elif "private" in modifier_text:
+                    class_info.access_modifier = "private"
+                elif "protected" in modifier_text:
+                    class_info.access_modifier = "protected"
+                else:
+                    class_info.access_modifier = "package"
 
         # 부모 클래스 및 인터페이스 추출
         for child in node.children:

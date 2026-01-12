@@ -6,7 +6,7 @@ config.json에 설정된 DB 테이블과 칼럼에 접근하는 소스 파일 �
 
 import logging
 import re
-from collections import defaultdict
+from collections import defaultdict, deque
 from parser.call_graph_builder import CallGraphBuilder
 from parser.java_ast_parser import JavaASTParser
 from parser.xml_mapper_parser import XMLMapperParser
@@ -204,11 +204,15 @@ class DBAccessAnalyzer:
                     and self.call_graph_builder.call_graph
                 ):
                     # Call Graph에서 역방향으로 탐색하여 상위 layer 파일 찾기
-                    upper_layer_files = self._find_upper_layer_files(method_string)
+                    upper_layer_files, reduced_call_stacks = self._find_upper_layer_files(method_string)
                     for layer, file_path in upper_layer_files:
                         if layer and file_path and file_path not in all_added_files:
                             layer_files[layer].add(file_path)
                             all_added_files.add(file_path)
+                    
+                    # call_stacks 생성 (endpoint에서 target까지의 경로)
+                    call_stacks = self._expand_call_stacks(reduced_call_stacks, method_string)
+                    sql_query_info["call_stacks"] = call_stacks
 
         # TableAccessInfo 생성
         if not sql_queries:
@@ -378,21 +382,22 @@ class DBAccessAnalyzer:
 
         return f"{class_name}.{query_id}"
 
-    def _find_upper_layer_files(self, method_string: str) -> List[tuple[str, str]]:
+    def _find_upper_layer_files(self, method_string: str) -> tuple[List[tuple[str, str]], List[str]]:
         """
         Call Graph에서 method string과 일치하는 부분을 찾아 root까지 상위 layer로 거슬러 올라가면서
-        layer 이름과 file_path가 모두 존재하는 경우를 수집
+        layer 이름과 file_path가 모두 존재하는 경우를 수집하고, call_stacks도 수집
 
         Args:
             method_string: 메서드 시그니처 (예: "UserMapper.getUserById")
 
         Returns:
-            List[tuple[str, str]]: (layer, file_path) 튜플 리스트
+            tuple[List[tuple[str, str]], List[str]]: ((layer, file_path) 튜플 리스트, reduced_call_stacks)
         """
         result = []
+        reduced_call_stacks: List[str] = []
 
         if not self.call_graph_builder or not self.call_graph_builder.call_graph:
-            return result
+            return result, reduced_call_stacks
 
         call_graph = self.call_graph_builder.call_graph
         method_metadata = self.call_graph_builder.method_metadata
@@ -407,7 +412,7 @@ class DBAccessAnalyzer:
                     method_string = node
                     break
             else:
-                return result
+                return result, reduced_call_stacks
 
         # 역방향으로 탐색 (이 메서드를 호출하는 상위 메서드들)
         visited = set()
@@ -424,9 +429,12 @@ class DBAccessAnalyzer:
             layer = self.call_graph_builder._get_layer(node)
             file_path = metadata.get("file_path", "")
 
-            # layer와 file_path가 모두 있으면 결과에 추가
+            # layer와 file_path가 모두 있고 Unknown이 아니면 결과에 추가
             if layer and file_path and layer != "Unknown":
                 result.append((layer.lower(), file_path))
+                # call_stacks에도 추가 (시작점인 method_string은 항상 포함)
+                if node not in reduced_call_stacks:
+                    reduced_call_stacks.append(node)
 
             # 이 노드를 호출하는 상위 노드들 찾기 (predecessors)
             if call_graph.has_node(node):
@@ -434,10 +442,72 @@ class DBAccessAnalyzer:
                 for predecessor in predecessors:
                     traverse_up(predecessor, depth + 1, max_depth)
 
+        # 시작 노드(method_string)는 항상 call_stacks에 포함
+        reduced_call_stacks.append(method_string)
+
         # 시작 노드부터 역방향 탐색
         traverse_up(method_string)
 
-        return result
+        # reduced_call_stacks 역순 정렬 (시작점이 마지막에 오도록)
+        reduced_call_stacks.reverse()
+
+        return result, reduced_call_stacks
+
+    def _expand_call_stacks(
+        self, reduced_call_stacks: List[str], target_method: str
+    ) -> List[List[str]]:
+        """
+        reduced_call_stacks에서 endpoint를 찾아서 그 endpoint부터 target_method까지의
+        경로를 생성하여 call_stacks 리스트를 만듭니다.
+
+        Args:
+            reduced_call_stacks: 역방향 탐색으로 수집된 method signature 리스트
+            target_method: 시작점인 target method signature
+
+        Returns:
+            List[List[str]]: 각 endpoint에서 target까지의 경로 리스트
+        """
+        if not self.call_graph_builder or not self.call_graph_builder.call_graph:
+            return []
+
+        call_graph = self.call_graph_builder.call_graph
+        endpoint_method_signatures = self.call_graph_builder.get_endpoint_method_signatures()
+
+        all_call_stacks: List[List[str]] = []
+
+        # reduced_call_stacks에서 endpoint인 것들 찾기
+        for method_sig in reduced_call_stacks:
+            if method_sig not in endpoint_method_signatures:
+                continue
+
+            # BFS로 endpoint에서 target_method까지의 경로 찾기
+            queue = deque([(method_sig, [method_sig])])
+            visited = {method_sig}
+
+            while queue:
+                current_node, path = queue.popleft()
+
+                # target_method에 도달하면 경로 저장
+                if current_node == target_method:
+                    # Unknown layer가 아닌 노드만 포함
+                    filtered_path = []
+                    for node in path:
+                        layer = self.call_graph_builder._get_layer(node)
+                        if layer != "Unknown":
+                            filtered_path.append(node)
+                    if filtered_path:
+                        all_call_stacks.append(filtered_path)
+                    continue
+
+                # 다음 노드들 탐색 (successors)
+                if call_graph.has_node(current_node):
+                    successors = list(call_graph.successors(current_node))
+                    for successor in successors:
+                        if successor not in visited:
+                            visited.add(successor)
+                            queue.append((successor, path + [successor]))
+
+        return all_call_stacks
 
     def _determine_main_layer(self, layer_files: Dict[str, Set[str]]) -> str:
         """

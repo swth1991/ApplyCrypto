@@ -149,6 +149,14 @@ class BaseCodeGenerator(ABC):
             **(input_data.extra_variables or {}),
         }
 
+        # call_stacks 추출 및 추가
+        table_access_info = (input_data.extra_variables or {}).get("table_access_info")
+        if table_access_info:
+            call_stacks_str = self._get_callstacks_from_table_access_info(
+                input_data.file_paths, table_access_info
+            )
+            batch_variables["call_stacks"] = call_stacks_str
+
         with open(self.template_path, "r", encoding="utf-8") as f:
             template_str = f.read()
 
@@ -306,18 +314,72 @@ class BaseCodeGenerator(ABC):
 
     @abstractmethod
     def generate_modification_plan(
-        self, modification_context: ModificationContext
+        self, modification_context: ModificationContext, table_access_info: Optional[TableAccessInfo] = None
     ) -> List[ModificationPlan]:
         """
         수정 계획을 생성합니다 (단일 컨텍스트).
 
         Args:
             modification_context: 수정 컨텍스트
+            table_access_info: 테이블 접근 정보 (선택적)
 
         Returns:
             List[ModificationPlan]: 수정 계획 리스트
         """
         pass
+
+    def _get_callstacks_from_table_access_info(
+        self, file_paths: List[str], table_access_info: TableAccessInfo
+    ) -> str:
+        """
+        file_paths와 table_access_info로부터 관련 call_stacks를 추출하여 문자열로 변환합니다.
+
+        Args:
+            file_paths: 파일 경로 리스트
+            table_access_info: 테이블 접근 정보
+
+        Returns:
+            str: call_stacks를 JSON 문자열 형태로 변환한 결과
+        """
+        call_stacks_list = []
+
+        # 각 파일에 대해 public class 이름 생성 (파일명에서 확장자 제거)
+        file_class_names = []
+        for file_path in file_paths:
+            class_name = Path(file_path).stem
+            file_class_names.append(class_name)
+
+        # 각 sql_query에서 call_stacks 추출
+        for sql_query in table_access_info.sql_queries:
+            call_stacks = sql_query.get("call_stacks", [])
+            if not call_stacks:
+                continue
+
+            # 각 call_stack 확인
+            for call_stack in call_stacks:
+                if not isinstance(call_stack, list):
+                    continue
+
+                # call_stack 내 method_signature 중 하나라도 file_class_names와 매칭되는지 확인
+                for method_sig in call_stack:
+                    if not isinstance(method_sig, str):
+                        continue
+
+                    # method_signature에서 클래스명 추출 (예: "ClassName.methodName" -> "ClassName")
+                    if "." in method_sig:
+                        method_class_name = method_sig.split(".")[0]
+                    else:
+                        method_class_name = method_sig
+
+                    # file_class_names와 비교 (정확히 일치하는 경우만)
+                    if method_class_name in file_class_names:
+                        # 중복 방지
+                        if call_stack not in call_stacks_list:
+                            call_stacks_list.append(call_stack)
+                        break
+
+        # JSON 문자열로 변환
+        return json.dumps(call_stacks_list, indent=2, ensure_ascii=False)
 
     def _get_cache_key(self, prompt: str) -> str:
         """프롬프트의 캐시 키를 생성합니다."""
