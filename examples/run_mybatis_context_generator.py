@@ -82,7 +82,11 @@ def run_test():
     
     with patch.object(generator, '_read_files', side_effect=mock_read_files):
         # 5. Run Generate
-        contexts = generator.generate(table_access_info)
+        contexts = generator.generate(
+            layer_files=table_access_info.layer_files,
+            table_name=table_access_info.table_name,
+            columns=table_access_info.columns,
+        )
 
     # 6. Verify Results
     print(f"Generated {len(contexts)} contexts.\n")

@@ -1,7 +1,7 @@
 # Java Source Code Privacy Data Encryption Modification Task
 
 ## Role and Objective
-You are an expert Java developer specializing in Spring Framework applications. Your task is to modify Java source code to add encryption/decryption calls for personal information (주민번호/SSN, 성명/Name, 생년월일/Birth Date) while preserving all other code unchanged. Output all modifications in strict unified diff format.
+You are an expert Java developer specializing in Spring Framework applications. Your task is to modify Java source code to add encryption/decryption calls for personal information (주민번호/SSN, 성명/Name, 생년월일/Birth Date) while preserving all other code unchanged. Output the full modified source code.
 
 ## Critical Requirements
 
@@ -66,8 +66,10 @@ You have to modify source codes depending on each thpe of the information :
 #### Modification Steps
 Source code modifications must be approached through the following step-by-step process of thinking, execution, and verification:
 
-Identify locations in the source code that require changes and select them as candidate code. Candidate code should be selected separately for each table, column name, and variable names that can be inferred from them. For each selected candidate code, proceed with the modification work through steps 2-6 below.
+1. Identify candidate codes.
+First, you must identify candiate codes for change. The methods in the call stacks provided in "Call Stacks Information" section in below must be candidate codes. In those methods, there may be or may not be code blocks where variables inferred from column names specified in the "Table Column Information" section in below are used. For each selected candidate code, proceed with the modification work through steps 2-4 below.
 
+2. Determin data flow type of the candidate codes.
 Determine whether the data object used in the candidate code belongs to downstream or upstream. The process for making this determination is described in the sub-steps below.
 
 2-1. The application is a backend application written in Java, and the framework can vary, including Spring, Anyframe, etc. The source code for each framework is divided into upper layer, middle layer, and lower layer. For example, as follows:
@@ -86,9 +88,12 @@ Once the data flow of the candidate code is confirmed, perform the modification 
 
 3-2. If the data flow of the candidate code is upstream, determine whether the source layer is a database-related layer. If it corresponds to this, proceed with modifications for decryption. If the source layer is a layer unrelated to the database, no modifications should be made.
 
-When getter/setter methods need to be used for source code modification, you must verify the exact names of the required methods. Since getter/setter method names are very likely to be used within the provided source code, you should look for them. If you cannot find where they are used elsewhere, you should infer the most likely getter/setter names from the variable names and use them.
+3-3. When getter/setter methods need to be used for source code modification, you must use accurate method names. In order to do this, you have to examine provided DTO/DAO/VO class files.
 
-Source code modifications must be performed without duplication within the upper layer or middle layer identified in the above process. For example, in the case of Spring framework, the selection and modification of candidate code should be applied in either the controller layer or the service/service implementation layer, and should not occur redundantly in both layers. Similarly, in the case of Anyframe, it should be applied in either the service/service implementation layer or the business layer, and should not be applied redundantly in both layers.
+4. Determine layers to change.
+Applying encryption/descryption codes must not be duplacated accross layer source files. In candidate codes, if you find usage of variables inferred from column names specified in the "Table Column Information", chaning that layer file is preferred. If you can't find such codes over the layer files, the middle layer file is preferred for change. You can use each call stack provided in the "Call Stacks Information"
+
+For example, in the case of Spring framework, the selection and modification of candidate code should be applied in either the controller layer or the service/service implementation layer, and should not occur redundantly in both layers. Similarly, in the case of Anyframe, it should be applied in either the service/service implementation layer or the business layer, and should not be applied redundantly in both layers.
 
 
 **DO NOT modify:**
@@ -121,8 +126,8 @@ For EACH input source file, you MUST output in the following format using delimi
 ```
 
 The 'modification' should keep the same number of input source files in its list.
-Please note that 
-If there are modifications, ensure that "unified_diff" contains the entire source code without being cut off, using as many output tokens as possible.
+If there are modifications, ensure that "modified_code" contains the entire source code without being cut off, using as many output tokens as possible.
+If you decide not to change any input source files, you must leave the "MODIFIED_CODE" section empty.
 
 **Critical import point**
 You must generate "modification" key. This can not be omitted.
@@ -219,6 +224,9 @@ From here, there are actual information and source codes that you have to handle
 
 ## File Count: {{ file_count }}
 
+## Call Stacks Information
+The following call stacks show the method call relationships from the upper layer to lower layer methods. Methods of the upper and middle layer in each call stack should be candiate codes for applying encyption/decryption codes. You also have to use this information to understand the data flow direction when making modifications.
+{{ call_stacks }}
 
 ## Warnings
 1. Do not change the logic of existing code.

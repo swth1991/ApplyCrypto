@@ -170,6 +170,8 @@ class MyBatisSQLExtractor(SQLExtractor):
         layer_files: Dict[str, Set[str]] = defaultdict(set)
         all_files: Set[str] = set()
 
+        layer_name = "repository"
+
         strategy_specific = sql_query.get("strategy_specific", {})
         
         # MyBatis: namespace, parameter_type, result_type, result_map 사용
@@ -177,28 +179,28 @@ class MyBatisSQLExtractor(SQLExtractor):
         if namespace:
             interface_file = self._find_class_file(namespace)
             if interface_file:
-                layer_files["Repository"].add(interface_file)
+                layer_files[layer_name].add(interface_file)
                 all_files.add(interface_file)
 
         parameter_type = strategy_specific.get("parameter_type")
         if parameter_type:
             parameter_file = self._find_class_file(parameter_type)
             if parameter_file:
-                layer_files["Repository"].add(parameter_file)
+                layer_files[layer_name].add(parameter_file)
                 all_files.add(parameter_file)
 
         result_type = strategy_specific.get("result_type")
         if result_type:
             dao_file = self._find_class_file(result_type)
             if dao_file:
-                layer_files["Repository"].add(dao_file)
+                layer_files[layer_name].add(dao_file)
                 all_files.add(dao_file)
 
         result_map = strategy_specific.get("result_map")
         if result_map:
             result_map_file = self._find_class_file(result_map)
             if result_map_file:
-                layer_files["Repository"].add(result_map_file)
+                layer_files[layer_name].add(result_map_file)
                 all_files.add(result_map_file)
 
         # method_string 생성: namespace의 class_name + sql query의 id

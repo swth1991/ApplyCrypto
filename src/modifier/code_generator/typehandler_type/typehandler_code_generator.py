@@ -5,7 +5,7 @@ TypeHandler 레이어를 대상으로 코드 수정을 수행하는 CodeGenerato
 TODO: 구현 예정
 """
 
-from typing import List
+from typing import List, Optional
 
 from models.code_generator import CodeGeneratorInput, CodeGeneratorOutput
 from models.modification_plan import ModificationPlan
@@ -34,14 +34,15 @@ class TypeHandlerCodeGenerator(BaseCodeGenerator):
             "TypeHandlerCodeGenerator.generate()는 아직 구현되지 않았습니다."
         )
 
-    def generate_modification_plans(
-        self, table_access_info: TableAccessInfo
+    def generate_modification_plan(
+        self, modification_context: ModificationContext, table_access_info: Optional[TableAccessInfo] = None
     ) -> List[ModificationPlan]:
         """
         수정 계획을 생성합니다.
 
         Args:
-            table_access_info: 테이블 접근 정보
+            modification_context: 수정 컨텍스트
+            table_access_info: 테이블 접근 정보 (선택적)
 
         Returns:
             List[ModificationPlan]: 수정 계획 리스트
@@ -49,5 +50,5 @@ class TypeHandlerCodeGenerator(BaseCodeGenerator):
         # TODO: TypeHandler 특화 로직 구현 예정
         # 현재는 ControllerOrServiceCodeGenerator와 동일한 로직 사용 가능
         raise NotImplementedError(
-            "TypeHandlerCodeGenerator.generate_modification_plans()는 아직 구현되지 않았습니다."
+            "TypeHandlerCodeGenerator.generate_modification_plan()는 아직 구현되지 않았습니다."
         )
