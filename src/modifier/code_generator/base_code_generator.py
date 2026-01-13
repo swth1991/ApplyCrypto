@@ -140,12 +140,32 @@ class BaseCodeGenerator(ABC):
 
         source_files_str = "\n\n".join(snippets)
 
+        # context_files 처리 (VO 등 참조용 파일)
+        context_snippets = []
+        for file_path in input_data.context_files:
+            try:
+                path_obj = Path(file_path)
+                if path_obj.exists():
+                    with open(path_obj, "r", encoding="utf-8") as f:
+                        content = f.read()
+                    context_snippets.append(f"=== File: {path_obj.name} ===\n{content}")
+                else:
+                    logger.warning(f"Context file not found: {file_path}")
+            except Exception as e:
+                logger.error(
+                    f"Failed to read context file for prompt: {file_path} - {e}"
+                )
+
+        context_files_str = "\n\n".join(context_snippets) if context_snippets else ""
+
         # 배치 프롬프트 생성
         batch_variables = {
             "table_info": input_data.table_info,
             "layer_name": input_data.layer_name,
             "source_files": source_files_str,
             "file_count": len(input_data.file_paths),
+            "context_files": context_files_str,
+            "context_file_count": len(input_data.context_files),
             **(input_data.extra_variables or {}),
         }
 
@@ -189,16 +209,18 @@ class BaseCodeGenerator(ABC):
 
             if not content:
                 raise Exception("LLM응답에 content가 없습니다.")
-            
+
             content = content.strip()
 
             return self._parse_delimited_format(content, file_mapping)
-             
+
         except Exception as e:
             logger.error(f"LLM 응답 파싱 실패: {e}")
             raise Exception(f"LLM 응답 파싱 실패: {e}")
 
-    def _parse_delimited_format(self, content:str, file_mapping: Dict[str, str]) -> List[Dict[str, Any]]:
+    def _parse_delimited_format(
+        self, content: str, file_mapping: Dict[str, str]
+    ) -> List[Dict[str, Any]]:
         """
         구분자 기반 형식의 LLM 응답을 파싱합니다.
 
@@ -254,11 +276,13 @@ class BaseCodeGenerator(ABC):
                         f"파일 매핑에서 찾을 수 없음: {file_name}. 원본 값 사용."
                     )
 
-                modifications.append({
-                    "file_path": file_path,
-                    "reason": reason.strip(),
-                    "modified_code": modified_code.strip(),
-                })
+                modifications.append(
+                    {
+                        "file_path": file_path,
+                        "reason": reason.strip(),
+                        "modified_code": modified_code.strip(),
+                    }
+                )
 
             except Exception as e:
                 logger.warning(f"블록 파싱 중 오류 (건너뜀): {e}")
@@ -269,7 +293,9 @@ class BaseCodeGenerator(ABC):
                 "구분자 형식 파싱 실패: 유효한 수정 블록을 찾을 수 없습니다."
             )
 
-        logger.info(f"{len(modifications)}개 파일 수정 정보를 파싱했습니다 (구분자 형식).")
+        logger.info(
+            f"{len(modifications)}개 파일 수정 정보를 파싱했습니다 (구분자 형식)."
+        )
         return modifications
 
     def _extract_section(
@@ -314,7 +340,9 @@ class BaseCodeGenerator(ABC):
 
     @abstractmethod
     def generate_modification_plan(
-        self, modification_context: ModificationContext, table_access_info: Optional[TableAccessInfo] = None
+        self,
+        modification_context: ModificationContext,
+        table_access_info: Optional[TableAccessInfo] = None,
     ) -> List[ModificationPlan]:
         """
         수정 계획을 생성합니다 (단일 컨텍스트).
@@ -388,4 +416,3 @@ class BaseCodeGenerator(ABC):
     def clear_cache(self):
         """캐시를 비웁니다."""
         self._prompt_cache.clear()
-
