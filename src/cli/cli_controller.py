@@ -1260,6 +1260,8 @@ class CLIController:
             total_success = 0
             total_failed = 0
             total_skipped = 0
+            unique_success_files = set()
+            modification_logs = []
 
             for table_info in table_access_info_list:
                 self.logger.info(f"\n  테이블 '{table_info.table_name}' 처리 중...")
@@ -1296,15 +1298,19 @@ class CLIController:
 
                             status = res.get("status")
                             if status == "success":
-                                self.logger.info(f"  -> 적용 완료: {Path(plan.file_path).name}")
+                                self.logger.info(f"  -> 적용 완료: {plan.file_path}")
                                 total_success += 1
+                                unique_success_files.add(str(plan.file_path))
+                                modification_logs.append(f"[SUCCESS] {plan.file_path}")
                             elif status == "skipped":
                                 total_skipped += 1
+                                modification_logs.append(f"[SKIPPED] {plan.file_path}")
                             elif status == "failed":
                                 # 이미 실패 상태로 넘어온 경우 출력 생략 혹은 간단히 출력
                                 if plan.status != "failed": 
                                     self.logger.error(f"  -> 실패: {res.get('error')}")
                                 total_failed += 1
+                                modification_logs.append(f"[FAILED] {plan.file_path} - {res.get('error')}")
 
                     except Exception as e:
                         self.logger.error(f"파일 처리 중 오류: {e}")
@@ -1331,10 +1337,23 @@ class CLIController:
             )
 
             # 통계 출력
-            self.logger.info("\n모든 작업이 완료되었습니다.")
-            self.logger.info(f"  - 성공: {total_success}개")
-            self.logger.info(f"  - 실패: {total_failed}개")
-            self.logger.info(f"  - 건너뜀: {total_skipped}개")
+            # 통계 메시지 준비
+            summary_lines = [
+                "\n모든 작업이 완료되었습니다.",
+                f"  - 성공 (작업): {total_success}개",
+                f"  - 성공 (파일): {len(unique_success_files)}개 (중복 제외)",
+                f"  - 실패: {total_failed}개",
+                f"  - 건너뜀: {total_skipped}개"
+            ]
+
+            # 화면 출력
+            for line in summary_lines:
+                self.logger.info(line)
+
+            # 로그 파일 저장
+            log_content = "\n".join(modification_logs) + "\n\n" + "=" * 50 + "\n" + "\n".join(summary_lines)
+            log_file_path = persistence_manager.save_text_file(log_content, "modification_log.txt")
+            self.logger.info(f"\n수정 로그가 저장되었습니다: {log_file_path}")
 
             if args.dry_run:
                 self.logger.info("\n[미리보기 모드] 실제 파일은 수정되지 않았습니다.")
