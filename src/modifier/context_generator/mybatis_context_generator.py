@@ -94,7 +94,7 @@ class MybatisContextGenerator(BaseContextGenerator):
         return selected_files
 
     def _match_import_to_file_path(
-        self, import_statement: str, target_files: List[str]
+        self, import_statement: str, target_files: List[str], allow_impl_match: bool = False
     ) -> Optional[str]:
         """
         import 문과 일치하는 파일 경로를 찾습니다.
@@ -102,6 +102,8 @@ class MybatisContextGenerator(BaseContextGenerator):
         Args:
             import_statement: import 문 (예: "com.example.service.UserService")
             target_files: 대상 파일 목록
+            allow_impl_match: True면 인터페이스-구현체 매칭 허용
+                             (예: UserService import → UserServiceImpl.java 매칭)
 
         Returns:
             Optional[str]: 일치하는 파일 경로, 없으면 None
@@ -109,13 +111,23 @@ class MybatisContextGenerator(BaseContextGenerator):
         # import 문에서 클래스명 추출 (마지막 부분)
         class_name = import_statement.split(".")[-1]
 
-        # 대상 파일 중에서 클래스명과 일치하는 파일 찾기
+        # 1차: 정확한 매칭 시도
         for file_path in target_files:
             file_name = os.path.basename(file_path)
             # 확장자 제거
             file_stem = os.path.splitext(file_name)[0]
             if file_stem == class_name:
                 return file_path
+
+        # 2차: 인터페이스-구현체 매칭 (allow_impl_match=True일 때만)
+        # 예: UserService → UserServiceImpl 매칭
+        if allow_impl_match:
+            for file_path in target_files:
+                file_name = os.path.basename(file_path)
+                file_stem = os.path.splitext(file_name)[0]
+                # 파일명이 import 클래스명으로 시작하고 Impl로 끝나는 경우
+                if file_stem.startswith(class_name) and file_stem.endswith("Impl"):
+                    return file_path
 
         return None
 
@@ -213,10 +225,11 @@ class MybatisContextGenerator(BaseContextGenerator):
 
                 # 4. Service Layer에 수집되어 있는 파일 목록 중에서
                 # Controller의 import문에 존재하는 파일만 선택해서 파일 그룹에 추가한다
+                # allow_impl_match=True: 인터페이스(UserService) → 구현체(UserServiceImpl) 매칭 허용
                 matched_service_files: List[str] = []
                 for import_stmt in controller_imports:
                     matched_file = self._match_import_to_file_path(
-                        import_stmt, service_files
+                        import_stmt, service_files, allow_impl_match=True
                     )
                     if matched_file:
                         matched_service_files.append(matched_file)
