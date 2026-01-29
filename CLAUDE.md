@@ -69,7 +69,8 @@ CLI Layer → Configuration → Collection → Parsing → Analysis → Modifica
 - `EndpointExtractionStrategy`: 프레임워크별 엔드포인트 추출 (`src/parser/endpoint_strategy/`)
 - `SQLExtractor`: SQL 래핑 타입별 추출 전략 (`src/analyzer/sql_extractors/`)
 - `BaseCodeGenerator`: 코드 생성 전략 (`src/modifier/code_generator/`)
-- `ContextGenerator`: 컨텍스트 생성 전략 (`src/modifier/context_generators/`)
+- `BaseMultiStepCodeGenerator`: 다단계 코드 생성 베이스 (`src/modifier/code_generator/multi_step_base/`)
+- `ContextGenerator`: 컨텍스트 생성 전략 (`src/modifier/context_generator/`)
 
 **Factory Pattern** - 설정 기반 전략 생성:
 - `LLMFactory`, `EndpointExtractionStrategyFactory`, `SQLExtractorFactory`
@@ -162,7 +163,7 @@ Phase 1에서 VO 파일과 SQL 쿼리의 필드 매핑을 먼저 분석하여 Pl
 |------|---------|---------|
 | Analyzers | `*Analyzer` | `DBAccessAnalyzer` |
 | Parsers | `*Parser` | `JavaASTParser` |
-| Generators | `*Generator` | `TwoStepCodeGenerator` |
+| Generators | `*Generator` | `TwoStepCodeGenerator`, `ThreeStepCCSCodeGenerator` |
 | Extractors | `*Extractor` | `MyBatisSQLExtractor` |
 | Providers | `*Provider` | `WatsonXAIProvider` |
 
@@ -177,16 +178,28 @@ Phase 1에서 VO 파일과 SQL 쿼리의 필드 매핑을 먼저 분석하여 Pl
 각 코드 생성기는 Jinja2 템플릿을 사용합니다:
 ```
 src/modifier/code_generator/
+├── multi_step_base/
+│   └── base_multi_step_code_generator.py  # 다단계 코드 생성 베이스 클래스
 ├── two_step_type/
 │   ├── planning_template.md
 │   └── execution_template.md
 └── three_step_type/
-    ├── data_mapping_template.md   # Phase 1: VO/SQL 매핑
-    ├── planning_template.md       # Phase 2: 수정 지침
-    └── execution_template.md      # Phase 3: 코드 생성
+    ├── data_mapping_template.md            # Phase 1: 기본 VO/SQL 매핑
+    ├── data_mapping_template_ccs.md        # Phase 1: CCS 전용
+    ├── data_mapping_template_ccs_name_only.md  # Phase 1: CCS 이름만
+    ├── planning_template.md                # Phase 2: 기본 수정 지침
+    ├── planning_template_ccs.md            # Phase 2: CCS 전용
+    ├── planning_template_ccs_name_only.md  # Phase 2: CCS 이름만
+    ├── execution_template_full.md          # Phase 3: 전체 소스 생성
+    ├── execution_template_diff.md          # Phase 3: diff 형식 생성
+    ├── execution_template_ccs.md           # Phase 3: CCS 전용
+    ├── execution_template_ccs_name_only.md # Phase 3: CCS 이름만
+    └── vo_extraction_template.md           # VO 추출 보조 템플릿
 ```
 
 주요 템플릿 변수: `{{source_code}}`, `{{table_info}}`, `{{call_chain}}`, `{{mapping_info}}`
+
+**CCS 프로젝트용 템플릿**: `*_ccs.md` 접미사가 붙은 템플릿은 AnyframeCCS 프레임워크 전용이며, `*_ccs_name_only.md`는 이름 필드만 처리하는 경량 버전입니다.
 
 ### Error Handling
 - 커스텀 예외: `ConfigurationError`, `CodeGeneratorError`, `PersistenceError`
