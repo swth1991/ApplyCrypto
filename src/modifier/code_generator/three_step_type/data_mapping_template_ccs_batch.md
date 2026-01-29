@@ -6,12 +6,10 @@ You are an expert in analyzing Java Batch programs, VO classes, and SQL queries.
 Your task is to analyze the **BAT.java code's data flow** to extract field mappings between SQL queries and Java VO objects.
 
 **Important**:
-
-- This is an **extraction and analysis** task only
-- You are NOT modifying any code
+- This is an **extraction and analysis** task only - you are NOT modifying any code
 - Analyze `itemFactory.getItemReader()` / `getItemWriter()` patterns to map SQL IDs to VO classes
 - Analyze `vo.getXxx()` / `vo.setXxx()` patterns to identify actual field usage
-- You are providing structured information to help the next phase (Planning) understand how data flows between Java and DB
+- You are providing structured information for the next phase (Planning)
 
 ---
 
@@ -22,15 +20,13 @@ Your task is to analyze the **BAT.java code's data flow** to extract field mappi
 {{ table_info }}
 
 **table_info.columns Structure:**
-
-Each column in `table_info.columns` may contain:
-- `name`: Column name (always present) - **this is the DB column name to match in SQL**
+- `name`: Column name (always present) - **this is the DB column to find in SQL**
 - `new_column`: Whether this is a new column (boolean)
 - `column_type`: Type of sensitive data - `"name"`, `"dob"`, or `"rrn"` (optional)
-- `encryption_code`: Direct policy constant - e.g., `"SliEncryptionConstants.Policy.NAME"` (optional)
+- `encryption_code`: Direct policy constant (optional)
 
 **CRITICAL: Every column listed in table_info.columns IS an encryption target.**
-Do NOT skip any column. Even if the column name seems unusual (e.g., `gvnm`, `aenam`), it must be included in `crypto_fields`.
+Do NOT skip any column. Even if the column name seems unusual, it must be included in `crypto_fields`.
 
 ---
 
@@ -73,9 +69,9 @@ ItemWriter upd01 = itemFactory.getItemWriter("upd01");
 ```
 
 From this pattern, extract:
-- `sql_id`: "sel04"
-- `vo_class`: "XXXBatVO"
-- `operation`: "SELECT" (for ItemReader) or "INSERT/UPDATE" (for ItemWriter)
+- `sql_id`: "sel04" → use as `query_id`
+- `vo_class`: "XXXBatVO" → use as `class_name`
+- `operation`: "SELECT" (for ItemReader) or "INSERT/UPDATE" (for ItemWriter) → use as `command_type`
 
 ### 2. Analyze Data Flow Patterns
 
@@ -116,7 +112,6 @@ For each target column in `table_info.columns`:
 ## Output Format (★★★ JSON ONLY ★★★)
 
 **CRITICAL OUTPUT RULES:**
-
 1. Output **ONLY** valid JSON - no explanations, no markdown, no comments
 2. Do **NOT** include ```json or ``` markers
 3. Do **NOT** add trailing commas
@@ -127,14 +122,6 @@ For each target column in `table_info.columns`:
 
 ```json
 {
-  "sql_vo_mappings": [
-    {
-      "sql_id": "sel04",
-      "vo_class": "XXXBatVO",
-      "operation": "SELECT",
-      "description": "Brief description of what this query does"
-    }
-  ],
   "queries": [
     {
       "query_id": "sel04",
@@ -166,20 +153,17 @@ For each target column in `table_info.columns`:
 
 ## Field Descriptions
 
-| Field           | Description                                                                          |
-| --------------- | ------------------------------------------------------------------------------------ |
-| `sql_id`        | SQL query ID from XML (e.g., `sel04`, `upd01`)                                       |
-| `vo_class`      | VO class name used with this query (simple name, e.g., `XXXBatVO`)                   |
-| `operation`     | Query type: `SELECT`, `INSERT`, `UPDATE`, `DELETE`                                   |
-| `query_id`      | Same as sql_id                                                                       |
-| `command_type`  | SQL command type: `SELECT`, `INSERT`, `UPDATE`, `DELETE`                             |
-| `sql_summary`   | Brief description of what the query does with target columns                         |
-| `type_category` | Type of Java object: `VO`, `MAP`, `PRIMITIVE`, `NONE`                                |
-| `class_name`    | Simple class name without package path (e.g., `XXXBatVO`, `HashMap`)                 |
-| `column_name`   | Original DB column name (from table_info.columns)                                    |
-| `java_field`    | Java field name in the VO class                                                      |
-| `getter`        | Getter method name (from VO class or inferred: `getFieldName`)                       |
-| `setter`        | Setter method name (from VO class or inferred: `setFieldName`)                       |
+| Field           | Description                                                                |
+| --------------- | -------------------------------------------------------------------------- |
+| `query_id`      | SQL query ID from XML (e.g., `sel04`, `upd01`)                             |
+| `command_type`  | SQL command type: `SELECT`, `INSERT`, `UPDATE`, `DELETE`                   |
+| `sql_summary`   | Brief description of what the query does                                   |
+| `type_category` | Type of Java object: `VO`, `MAP`, `PRIMITIVE`, `NONE`                      |
+| `class_name`    | Simple class name without package (e.g., `XXXBatVO`, `HashMap`)            |
+| `column_name`   | **Original DB column name** (from table_info.columns)                      |
+| `java_field`    | Java field name in the VO class                                            |
+| `getter`        | Getter method name (from VO class or inferred: `getFieldName`)             |
+| `setter`        | Setter method name (from VO class or inferred: `setFieldName`)             |
 
 ---
 
@@ -210,14 +194,6 @@ public class CmpgnCstmrBatVO {
 **Output:**
 ```json
 {
-  "sql_vo_mappings": [
-    {
-      "sql_id": "sel04",
-      "vo_class": "CmpgnCstmrBatVO",
-      "operation": "SELECT",
-      "description": "Select customer data including RRN"
-    }
-  ],
   "queries": [
     {
       "query_id": "sel04",
@@ -259,14 +235,6 @@ upd01.write(updateVo);
 **Output:**
 ```json
 {
-  "sql_vo_mappings": [
-    {
-      "sql_id": "upd01",
-      "vo_class": "CmpgnCstmrBatVO",
-      "operation": "UPDATE",
-      "description": "Update customer RRN"
-    }
-  ],
   "queries": [
     {
       "query_id": "upd01",
@@ -317,20 +285,6 @@ while (sel01.next()) {
 **Output:**
 ```json
 {
-  "sql_vo_mappings": [
-    {
-      "sql_id": "sel01",
-      "vo_class": "SourceBatVO",
-      "operation": "SELECT",
-      "description": "Select source data"
-    },
-    {
-      "sql_id": "ins01",
-      "vo_class": "TargetBatVO",
-      "operation": "INSERT",
-      "description": "Insert target data"
-    }
-  ],
   "queries": [
     {
       "query_id": "sel01",
@@ -379,6 +333,48 @@ while (sel01.next()) {
   ]
 }
 ```
+
+### Example 4: MERGE/INSERT with data from target table (DB → DB transfer)
+
+**SQL pattern:**
+```sql
+MERGE INTO non_target_table tgt
+USING (SELECT cust_id, cust_nm, rrn_encr FROM target_table WHERE status = 'A') src
+ON (tgt.cust_id = src.cust_id)
+WHEN MATCHED THEN UPDATE SET tgt.cust_nm = src.cust_nm
+WHEN NOT MATCHED THEN INSERT (cust_id, cust_nm, rrn_encr) VALUES (src.cust_id, src.cust_nm, src.rrn_encr)
+```
+
+**Analysis:**
+- This query moves data **from target_table to non_target_table** within SQL
+- The sensitive columns (`CUST_NM`, `RRN_ENCR`) are **already encrypted in target_table**
+- Data flows directly DB → DB without passing through Java layer
+- **No encryption/decryption needed** - encrypted values are transferred as-is
+
+**Output:**
+```json
+{
+  "queries": [
+    {
+      "query_id": "mergeToOtherTable",
+      "command_type": "MERGE",
+      "sql_summary": "MERGE data from target_table to non_target_table - DB to DB transfer, already encrypted",
+      "input_mapping": {
+        "type_category": "NONE",
+        "class_name": null,
+        "crypto_fields": []
+      },
+      "output_mapping": {
+        "type_category": "NONE",
+        "class_name": null,
+        "crypto_fields": []
+      }
+    }
+  ]
+}
+```
+
+**★ Key Point:** When sensitive data moves **directly between tables in SQL** (MERGE INTO, INSERT INTO ... SELECT), the data is already encrypted in the source table. No Java-layer encryption/decryption is required - `crypto_fields` should be empty.
 
 ---
 

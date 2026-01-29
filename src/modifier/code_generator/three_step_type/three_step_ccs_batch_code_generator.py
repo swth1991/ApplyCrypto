@@ -164,9 +164,8 @@ class ThreeStepCCSBatchCodeGenerator(ThreeStepCodeGenerator):
         )
 
         # 요약 로깅
-        sql_vo_count = len(mapping_info.get("sql_vo_mappings", []))
         query_count = len(mapping_info.get("queries", []))
-        logger.info(f"SQL-VO 매핑: {sql_vo_count}개, 쿼리 분석: {query_count}개")
+        logger.info(f"Query Analysis 완료: {query_count}개 쿼리")
 
         return mapping_info, tokens_used
 
