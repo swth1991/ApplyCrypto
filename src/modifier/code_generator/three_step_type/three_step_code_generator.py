@@ -245,6 +245,7 @@ class ThreeStepCodeGenerator(BaseMultiStepCodeGenerator):
         prompt = self._create_data_mapping_prompt(
             modification_context, table_access_info
         )
+
         logger.debug(f"Query Analysis 프롬프트 길이: {len(prompt)} chars")
 
         # 프롬프트 저장 (LLM 호출 직전)
