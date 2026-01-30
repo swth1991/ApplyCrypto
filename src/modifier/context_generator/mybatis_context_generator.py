@@ -39,7 +39,7 @@ class MybatisContextGenerator(BaseContextGenerator):
             file_name = os.path.basename(file_path)
             # 확장자 제거
             file_stem = os.path.splitext(file_name)[0]
-            if file_stem == class_name:
+            if class_name in file_stem:
                 return file_path
         
         return None
@@ -67,6 +67,12 @@ class MybatisContextGenerator(BaseContextGenerator):
         controller_files = layer_files.get("controller", [])
         service_files = layer_files.get("service", [])
         repository_files = layer_files.get("repository", [])
+
+        # repository_files에서 이름이나 파일 경로에 "mapper"가 포함된 항목 제거
+        repository_files = [
+            file_path for file_path in repository_files
+            if "mapper" not in file_path.lower()
+        ]
 
         if not controller_files:
             logger.info("Controller Layer 파일이 없습니다.")

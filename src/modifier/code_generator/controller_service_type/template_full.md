@@ -95,6 +95,10 @@ Applying encryption/descryption codes must not be duplacated accross layer sourc
 
 For example, in the case of Spring framework, the selection and modification of candidate code should be applied in either the controller layer or the service/service implementation layer, and should not occur redundantly in both layers. Similarly, in the case of Anyframe, it should be applied in either the service/service implementation layer or the business layer, and should not be applied redundantly in both layers.
 
+5. Specify reason.
+You must specify reason for code changeing or not chaning in the following format
+- Object name of the data flow and its direction (upstream/downstream/both). Source layer (in case of upstream), destination layer (in case of downstream) in the provided call stack. Whethere the provided VO has properties for applying encryption/decryption and its name if it has.
+
 
 **DO NOT modify:**
 - Code unrelated to the specified tables and columns
