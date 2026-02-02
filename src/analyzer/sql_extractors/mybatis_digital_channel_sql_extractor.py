@@ -7,22 +7,71 @@ MyBatis XML Mapper 파일에서 SQL을 추출하는 구현 클래스입니다.
 import logging
 import os
 import json
-import re
 from collections import defaultdict
 from typing import Any, Dict, List, Optional, Set, Tuple, override
 
-from config.config_manager import Configuration
-from models.source_file import SourceFile
-from models.sql_extraction_output import SQLExtractionOutput
-from parser.xml_mapper_parser import XMLMapperParser
-
-from ..llm_sql_extractor.llm_sql_extractor import LLMSQLExtractor
-from ..sql_extractor import SQLExtractor
 from .mybatis_sql_extractor import MyBatisSQLExtractor
+from config.config_manager import Configuration
+from parser.xml_mapper_parser import XMLMapperParser
+from parser.digital_channel_parser import DigitalChannelParser
 
 
 class MyBatisDigitalChannelSQLExtractor(MyBatisSQLExtractor):
     _namespace_map_cache = None
+
+    def __init__(
+        self,
+        config: Configuration,
+        xml_parser: XMLMapperParser = None,
+        java_parse_results: List[dict] = None,
+        call_graph_builder = None,
+    ):
+        super().__init__(config, xml_parser, java_parse_results, call_graph_builder)
+        self._generate_namespace_map()
+
+    def _generate_namespace_map(self):
+        """
+        초기화 시 digital_chananel_specific_map.json 생성
+        """
+        target_dir = self.config.target_project
+        if not target_dir:
+            return
+
+        # map 파일 경로
+        output_file = "digital_chananel_specific_map.json"
+        
+        # 파일 찾기 및 파싱
+        file_list = self._find_java_files(target_dir)
+        result = {}
+        parser = DigitalChannelParser()
+        
+        count = 0
+        for file_path in file_list:
+            try:
+                namespace, class_name, methods = parser.extract_info(file_path)
+                if namespace:
+                    if namespace not in result:
+                        result[namespace] = {}
+                    
+                    result[namespace][class_name] = methods
+                    count += 1
+            except Exception as e:
+                logging.warning(f"Error parsing {file_path}: {e}")
+
+        # 결과 저장
+        try:
+            with open(output_file, 'w', encoding='utf-8') as f:
+                json.dump(result, f, indent=4, ensure_ascii=False)
+            logging.info(f"Generated {output_file} with {count} entries")
+            self._namespace_map_cache = result
+        except Exception as e:
+            logging.error(f"Failed to write {output_file}: {e}")
+
+    def _find_java_files(self, directory):
+        for root, dirs, files in os.walk(directory):
+            for file in files:
+                if file.endswith("Dao.java") or file.endswith("DaoModel.java") or file.endswith("Service.java"):
+                    yield os.path.join(root, file)
 
     @override
     def get_class_files_from_sql_query(
@@ -120,8 +169,12 @@ class MyBatisDigitalChannelSQLExtractor(MyBatisSQLExtractor):
             class_map = self._namespace_map_cache[namespace]
             # 해당 namespace 아래의 클래스들을 순회하며 query_id(메서드명)가 있는지 확인
             for class_name, methods in class_map.items():
-                if query_id in methods:
-                    return class_name
+                for method_info in methods:
+                    if isinstance(method_info, dict):
+                        if method_info.get("sql_id") == query_id or method_info.get("method") == query_id:
+                            return class_name
+                    elif method_info == query_id:
+                        return class_name
         
         # 매핑되지 않았거나 찾을 수 없는 경우 기본 동작 (namespace의 마지막 부분 사용)
         return namespace.split(".")[-1]
