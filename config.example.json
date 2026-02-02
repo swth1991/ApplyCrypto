@@ -6,6 +6,7 @@
   "source_file_types": [".java", ".xml"],
   "sql_wrapping_type": "mybatis",
   "framework_type": "SpringMVC",
+  "ccs_prefix": null,
   "llm_provider": "watsonx_ai",
   "generate_type": "full_source",
   "access_tables": [
@@ -162,6 +163,20 @@
     "SpringBatQrts", "AnyframeBatSarangOn", "AnyframeBatEtc"
   ],
 
+  "_comment_ccs_prefix": "=== CCS Prefix Option (for AnyframeCCS projects only) ===",
+  "_ccs_prefix_description": "CCS 프로젝트 타입을 지정합니다. ThreeStep 코드 생성 시 유틸리티 클래스 결정에 사용됩니다.",
+  "_ccs_prefix_options": {
+    "null": "미설정 - 기존 SliEncryptionUtil 직접 호출 패턴 사용",
+    "BC": "BCCommUtil, BCMaskingUtil 사용",
+    "CP": "CPCmpgnUtil, CPMaskingUtil 사용",
+    "CR": "CRCommonUtil, CRMaskingUtil 사용"
+  },
+  "_ccs_prefix_patterns": {
+    "single_encrypt": "{CommonUtil}.encrypt(!StringUtil.isEmptyTrimmed(...), SliEncryptionUtil.encrypt(...), SliEncryptionUtil.encrypt(' '))",
+    "single_decrypt": "{CommonUtil}.getDefaultValue(!StringUtil.isEmptyTrimmed(...), SliEncryptionUtil.decrypt(...), SliEncryptionUtil.decrypt(' '))",
+    "multi_decrypt": "{CommonUtil}.setListDecryptAndMask(list, targetEncr) + {MaskingUtil}.mask() for name fields"
+  },
+
   "_comment_sql_wrapping_types": "=== SQL Wrapping Type Options ===",
   "_sql_wrapping_types": [
     "mybatis - Standard MyBatis XML mappers",
@@ -169,5 +184,23 @@
     "mybatis_ccs_batch - CCS Batch MyBatis (*BAT_SQL.xml)",
     "jdbc - Plain JDBC with PreparedStatement",
     "jpa - JPA/Hibernate"
-  ]
+  ],
+
+  "_comment_ccs_example": "=== CCS Project ThreeStep Example ===",
+  "_ccs_threestep_example": {
+    "_description": "AnyframeCCS 프로젝트용 ThreeStep 설정 예시",
+    "framework_type": "AnyframeCCS",
+    "sql_wrapping_type": "mybatis_ccs",
+    "ccs_prefix": "CR",
+    "modification_type": "ThreeStep",
+    "three_step_config": {
+      "analysis_provider": "watsonx_ai",
+      "analysis_model": "ibm/granite-3-8b-instruct",
+      "execution_provider": "watsonx_ai",
+      "execution_model": "mistralai/codestral-2505",
+      "execution_options": {
+        "mode": "full"
+      }
+    }
+  }
 }

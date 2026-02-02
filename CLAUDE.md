@@ -46,6 +46,13 @@ WATSONX_API_KEY=your_api_key
 WATSONX_PROJECT_ID=your_project_id
 ```
 
+**Note:** Python 3.13 이상이 필요합니다. 가상환경 생성 예시:
+```bash
+python3.13 -m venv .venv
+source .venv/bin/activate  # Linux/Mac
+pip install -r requirements.txt
+```
+
 ## Architecture Overview
 
 ### Layered Architecture Flow
@@ -68,6 +75,9 @@ CLI Layer → Configuration → Collection → Parsing → Analysis → Modifica
 - `LLMProvider`: LLM 프로바이더 추상화 (`src/modifier/llm/`)
 - `EndpointExtractionStrategy`: 프레임워크별 엔드포인트 추출 (`src/parser/endpoint_strategy/`)
 - `SQLExtractor`: SQL 래핑 타입별 추출 전략 (`src/analyzer/sql_extractors/`)
+  - `MyBatisSQLExtractor`, `MyBatisCCSSQLExtractor`, `MyBatisCCSBatchSQLExtractor`
+  - `JdbcSQLExtractor`, `JpaSQLExtractor`
+  - `AnyframeJdbcSQLExtractor`, `AnyframeJdbcBatSQLExtractor`
 - `BaseCodeGenerator`: 코드 생성 전략 (`src/modifier/code_generator/`)
 - `BaseMultiStepCodeGenerator`: 다단계 코드 생성 베이스 (`src/modifier/code_generator/multi_step_base/`)
 - `ContextGenerator`: 컨텍스트 생성 전략 (`src/modifier/context_generator/`)
@@ -89,6 +99,17 @@ The `config.json` file drives the entire workflow. Key fields:
 | `access_tables` | 암호화 대상 테이블/칼럼 목록 |
 
 See `config.example.json` for complete schema with all options.
+
+### CCS Prefix Configuration
+
+AnyframeCCS 프로젝트에서 `ccs_prefix` 옵션으로 유틸리티 클래스 패턴을 지정합니다:
+
+| Prefix | 암호화 유틸 | 마스킹 유틸 | 용도 |
+|--------|-------------|-------------|------|
+| `null` | SliEncryptionUtil 직접 호출 | - | 기본값 |
+| `"BC"` | BCCommUtil | BCMaskingUtil | BC 프로젝트 |
+| `"CP"` | CPCmpgnUtil | CPMaskingUtil | CP 프로젝트 |
+| `"CR"` | CRCommonUtil | CRMaskingUtil | CR 프로젝트 |
 
 ### Call Graph Traversal
 
@@ -186,13 +207,19 @@ src/modifier/code_generator/
 └── three_step_type/
     ├── data_mapping_template.md            # Phase 1: 기본 VO/SQL 매핑
     ├── data_mapping_template_ccs.md        # Phase 1: CCS 전용
+    ├── data_mapping_template_ccs_batch.md      # Phase 1: CCS Batch 전용
+    ├── data_mapping_template_ccs_batch_name_only.md  # Phase 1: CCS Batch 이름만
     ├── data_mapping_template_ccs_name_only.md  # Phase 1: CCS 이름만
     ├── planning_template.md                # Phase 2: 기본 수정 지침
     ├── planning_template_ccs.md            # Phase 2: CCS 전용
+    ├── planning_template_ccs_batch.md          # Phase 2: CCS Batch 전용
+    ├── planning_template_ccs_batch_name_only.md  # Phase 2: CCS Batch 이름만
     ├── planning_template_ccs_name_only.md  # Phase 2: CCS 이름만
     ├── execution_template_full.md          # Phase 3: 전체 소스 생성
     ├── execution_template_diff.md          # Phase 3: diff 형식 생성
     ├── execution_template_ccs.md           # Phase 3: CCS 전용
+    ├── execution_template_ccs_batch.md         # Phase 3: CCS Batch 전용
+    ├── execution_template_ccs_batch_name_only.md  # Phase 3: CCS Batch 이름만
     ├── execution_template_ccs_name_only.md # Phase 3: CCS 이름만
     └── vo_extraction_template.md           # VO 추출 보조 템플릿
 ```

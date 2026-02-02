@@ -162,6 +162,11 @@ class Configuration(BaseModel):
         "diff",
         description="코드 생성 방식 (full_source: 전체 코드, diff: 변경분, part: 부분 코드)",
     )
+    ccs_prefix: Optional[Literal["BC", "CP", "CR"]] = Field(
+        None,
+        description="CCS 프로젝트 prefix. 유틸리티 클래스 결정에 사용 "
+        "(BC→BCCommUtil, CP→CPCmpgnUtil, CR→CRCommonUtil)",
+    )
 
     def get_table_names(self) -> List[str]:
         """

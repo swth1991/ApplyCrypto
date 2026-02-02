@@ -116,6 +116,58 @@ import sli.fw.online.constants.SliEncryptionConstants;
 
 ---
 
+## CCS Utility Classes Reference (★★★ CRITICAL ★★★)
+
+### Configured Utilities
+{{ ccs_util_info }}
+
+### Required Imports (add if not present)
+```java
+import sli.fw.util.{CommonUtil};    // BCCommUtil, CPCmpgnUtil, or CRCommonUtil
+import sli.fw.util.{MaskingUtil};   // BCMaskingUtil, CPMaskingUtil, or CRMaskingUtil
+import sli.fw.util.StringUtil;
+import sli.fw.mask.SliMaskingConstant;
+import java.util.HashMap;
+import java.util.Map;
+```
+
+### Single-Record Encryption (ENCRYPT action)
+```java
+String {field}Encr = "";
+{field}Encr = {CommonUtil}.encrypt(
+    !StringUtil.isEmptyTrimmed(vo.get{Field}()),
+    SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, vo.get{Field}(), true),
+    SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, " ", true)
+);
+vo.set{Field}({field}Encr);
+```
+
+### Single-Record Decryption (DECRYPT action)
+```java
+String {field}Decr = "";
+{field}Decr = {CommonUtil}.getDefaultValue(
+    !StringUtil.isEmptyTrimmed(vo.get{Field}()),
+    SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.NAME, vo.get{Field}(), true),
+    SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.NAME, " ", true)
+);
+vo.set{Field}({field}Decr);
+```
+
+### Multi-Record Decryption (DECRYPT_LIST action)
+```java
+// Step 1: Batch decrypt using setListDecryptAndMask
+Map<String, String> targetEncr = new HashMap<String, String>();
+targetEncr.put("{javaField}", SliEncryptionConstants.Policy.NAME);
+outSVOs = (List<{VOType}>) {CommonUtil}.setListDecryptAndMask(outSVOs, targetEncr);
+
+// Step 2: Mask name fields (xxxMask fields) - setListDecryptAndMask doesn't mask names
+for (int i = 0; i < outSVOs.size(); i++) {
+    outSVOs.get(i).set{Field}Mask({MaskingUtil}.mask(SliMaskingConstant.NAME, outSVOs.get(i).get{Field}()));
+}
+```
+
+---
+
 ## Modification Instructions (Generated from Phase 2)
 
 {{ modification_instructions }}

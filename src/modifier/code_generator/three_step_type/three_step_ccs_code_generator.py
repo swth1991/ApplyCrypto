@@ -17,7 +17,7 @@ CCS 프로젝트의 특징:
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, List, Tuple
 
 from models.modification_context import ModificationContext
 from models.table_access_info import TableAccessInfo
@@ -25,6 +25,13 @@ from models.table_access_info import TableAccessInfo
 from .three_step_code_generator import ThreeStepCodeGenerator
 
 logger = logging.getLogger("applycrypto")
+
+# CCS prefix별 유틸리티 클래스 매핑
+CCS_UTIL_MAPPING: Dict[str, Dict[str, str]] = {
+    "BC": {"common_util": "BCCommUtil", "masking_util": "BCMaskingUtil"},
+    "CP": {"common_util": "CPCmpgnUtil", "masking_util": "CPMaskingUtil"},
+    "CR": {"common_util": "CRCommonUtil", "masking_util": "CRMaskingUtil"},
+}
 
 
 class ThreeStepCCSCodeGenerator(ThreeStepCodeGenerator):
@@ -44,19 +51,75 @@ class ThreeStepCCSCodeGenerator(ThreeStepCodeGenerator):
         """
         super().__init__(config)
 
+        # CCS 유틸리티 정보 초기화
+        self.ccs_util_info = self._get_ccs_util_info()
+
         # CCS 전용 템플릿 경로 설정
         template_dir = Path(__file__).parent
         self.data_mapping_template_ccs_path = (
             template_dir / "data_mapping_template_ccs.md"
         )
+        self.planning_template_ccs_path = (
+            template_dir / "planning_template_ccs.md"
+        )
+        self.execution_template_ccs_path = (
+            template_dir / "execution_template_ccs.md"
+        )
 
         # CCS 템플릿 존재 여부 확인
-        if not self.data_mapping_template_ccs_path.exists():
-            raise FileNotFoundError(
-                f"CCS 템플릿을 찾을 수 없습니다: {self.data_mapping_template_ccs_path}"
+        required_templates = [
+            self.data_mapping_template_ccs_path,
+            self.planning_template_ccs_path,
+            self.execution_template_ccs_path,
+        ]
+        for template_path in required_templates:
+            if not template_path.exists():
+                raise FileNotFoundError(
+                    f"CCS 템플릿을 찾을 수 없습니다: {template_path}"
+                )
+
+        # 로깅
+        if self.ccs_util_info:
+            logger.info(
+                f"ThreeStepCCSCodeGenerator 초기화 완료 "
+                f"(ccs_prefix: {config.ccs_prefix}, "
+                f"common_util: {self.ccs_util_info.get('common_util')})"
+            )
+        else:
+            logger.info(
+                "ThreeStepCCSCodeGenerator 초기화 완료 "
+                "(ccs_prefix 미설정, 기존 패턴 사용)"
             )
 
-        logger.info("ThreeStepCCSCodeGenerator 초기화 완료 (resultMap 기반 필드 매핑 사용)")
+    # ========== CCS 유틸리티 정보 관리 ==========
+
+    def _get_ccs_util_info(self) -> Dict[str, str]:
+        """
+        CCS prefix 기반 유틸리티 클래스 정보를 반환합니다.
+
+        Returns:
+            Dict[str, str]: common_util, masking_util 키를 가진 딕셔너리.
+                            ccs_prefix가 설정되지 않은 경우 빈 딕셔너리 반환.
+        """
+        ccs_prefix = getattr(self.config, "ccs_prefix", None)
+        if ccs_prefix and ccs_prefix in CCS_UTIL_MAPPING:
+            return CCS_UTIL_MAPPING[ccs_prefix]
+        return {}
+
+    def _format_ccs_util_info_for_prompt(self) -> str:
+        """
+        프롬프트용 CCS 유틸리티 정보를 포맷팅합니다.
+
+        Returns:
+            str: 템플릿에 삽입될 유틸리티 정보 문자열
+        """
+        if not self.ccs_util_info:
+            return "CCS prefix not configured. Using standard SliEncryptionUtil patterns."
+
+        common_util = self.ccs_util_info.get("common_util", "N/A")
+        masking_util = self.ccs_util_info.get("masking_util", "N/A")
+        return f"""- **Common Utility**: `{common_util}`
+- **Masking Utility**: `{masking_util}`"""
 
     # ========== Phase 1 오버라이드: CCS 전용 Data Mapping ==========
 
@@ -274,3 +337,101 @@ class ThreeStepCCSCodeGenerator(ThreeStepCodeGenerator):
 
         logger.info(f"CCS SQL 쿼리 포맷팅 완료: {query_num}개 쿼리")
         return "\n".join(output_parts)
+
+    # ========== Phase 2 오버라이드: CCS 전용 Planning ==========
+
+    def _create_planning_prompt(
+        self,
+        modification_context: ModificationContext,
+        table_access_info: TableAccessInfo,
+        mapping_info: Dict[str, Any],
+    ) -> str:
+        """
+        CCS 전용 Phase 2 (Planning) 프롬프트를 생성합니다.
+
+        부모 클래스의 로직에 ccs_util_info 변수를 추가하고,
+        CCS 전용 planning 템플릿을 사용합니다.
+        """
+        # 테이블/칼럼 정보
+        table_info = {
+            "table_name": modification_context.table_name,
+            "columns": modification_context.columns,
+        }
+        table_info_str = json.dumps(table_info, indent=2, ensure_ascii=False)
+
+        # 소스 파일 내용
+        add_line_num: bool = self.config and self.config.generate_type != "full_source"
+        source_files_str = self._read_file_contents(
+            modification_context.file_paths, add_line_num=add_line_num
+        )
+
+        # mapping_info (Phase 1 결과)를 JSON 문자열로 변환
+        mapping_info_str = json.dumps(mapping_info, indent=2, ensure_ascii=False)
+
+        # Call Stacks 정보
+        call_stacks_str = self._get_callstacks_from_table_access_info(
+            modification_context.file_paths, table_access_info
+        )
+
+        # 템플릿 변수 준비 (CCS 유틸리티 정보 포함)
+        variables = {
+            "table_info": table_info_str,
+            "source_files": source_files_str,
+            "mapping_info": mapping_info_str,
+            "call_stacks": call_stacks_str,
+            "ccs_util_info": self._format_ccs_util_info_for_prompt(),
+        }
+
+        # CCS 전용 planning 템플릿 사용
+        template_str = self._load_template(self.planning_template_ccs_path)
+        return self._render_template(template_str, variables)
+
+    # ========== Phase 3 오버라이드: CCS 전용 Execution ==========
+
+    def _create_execution_prompt(
+        self,
+        modification_context: ModificationContext,
+        modification_instructions: List[Dict[str, Any]],
+    ) -> Tuple[str, Dict[int, str], Dict[str, str], Dict[str, str]]:
+        """
+        CCS 전용 Execution 프롬프트를 생성합니다.
+
+        부모 클래스의 로직에 ccs_util_info 변수를 추가하고,
+        CCS 전용 execution 템플릿을 사용합니다.
+
+        Returns:
+            Tuple[str, Dict[int, str], Dict[str, str], Dict[str, str]]:
+                - Execution 프롬프트
+                - 인덱스 -> 파일 경로 매핑
+                - 파일명 -> 파일 경로 매핑
+                - 파일 경로 -> 파일 내용 매핑
+        """
+        add_line_num = self.config and self.config.generate_type != "full_source"
+
+        # 소스 파일 내용 (인덱스 형식)
+        source_files_str, index_to_path, path_to_content = (
+            self._read_file_contents_indexed(
+                modification_context.file_paths, add_line_num=add_line_num
+            )
+        )
+
+        # 파일명 -> 파일 경로 매핑 생성
+        file_mapping = {Path(fp).name: fp for fp in modification_context.file_paths}
+
+        # 수정 지침을 JSON 문자열로 변환
+        instructions_str = json.dumps(
+            modification_instructions, indent=2, ensure_ascii=False
+        )
+
+        # 템플릿 변수 준비 (CCS 유틸리티 정보 포함)
+        variables = {
+            "source_files": source_files_str,
+            "modification_instructions": instructions_str,
+            "ccs_util_info": self._format_ccs_util_info_for_prompt(),
+        }
+
+        # CCS 전용 execution 템플릿 사용
+        template_str = self._load_template(self.execution_template_ccs_path)
+        prompt = self._render_template(template_str, variables)
+
+        return prompt, index_to_path, file_mapping, path_to_content
