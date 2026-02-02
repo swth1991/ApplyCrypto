@@ -81,7 +81,7 @@ class DigitalChannelParser:
                 match = sql_pattern.search(method.body)
                 if match:
                     suffix = match.group(1)
-                    sql_id = namespace + suffix
+                    sql_id = suffix
             
             methods_data.append({
                 "method": method.name,
