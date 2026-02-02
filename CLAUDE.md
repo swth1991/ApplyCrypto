@@ -23,6 +23,9 @@ python main.py list --callgraph EmpController.login  # Method call chain
 python main.py modify --config config.json --dry-run  # Preview only
 python main.py modify --config config.json            # Apply changes
 
+# Clear analysis results
+python main.py clear  # Remove cached analysis data
+
 # Launch Streamlit UI
 python run_ui.py
 ```
@@ -68,6 +71,7 @@ CLI Layer → Configuration → Collection → Parsing → Analysis → Modifica
 6. **Modification Layer** (`src/modifier/`) → LLM-based code generation and patching
 7. **LLM Layer** (`src/modifier/llm/`) → Provider abstraction (WatsonX, OpenAI, Claude)
 8. **Persistence Layer** (`src/persistence/`) → JSON serialization and caching
+9. **Generator Layer** (`src/generator/`) → Report generation and output formatting
 
 ### Key Design Patterns
 
@@ -232,6 +236,13 @@ src/modifier/code_generator/
 - 커스텀 예외: `ConfigurationError`, `CodeGeneratorError`, `PersistenceError`
 - 로거: `logging.getLogger("applycrypto")`
 - 검증: 모든 설정과 데이터 모델에 Pydantic 스키마 사용
+
+## Gotchas
+
+- **테스트 실행 전**: `.env` 파일에 LLM 프로바이더 자격증명이 필요합니다
+- **CCS 프로젝트**: `ccs_prefix` 설정 시 `name_only` 모드와 함께 사용해야 할 수 있음
+- **캐시 문제**: 분석 결과가 이상할 경우 `python main.py clear`로 캐시 초기화
+- **tree-sitter 버전**: Python 3.13에서는 tree-sitter 0.22+ 권장
 
 ## Korean Language Support
 

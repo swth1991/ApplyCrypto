@@ -131,6 +131,17 @@ import java.util.HashMap;
 import java.util.Map;
 ```
 
+### Placeholder Naming Convention
+
+**Important**: The placeholders below follow specific naming patterns:
+- `{field}` → Variable name prefix (camelCase, e.g., `empNm` → used as `empNmEncr`)
+- `{Field}` → Method suffix (PascalCase, e.g., `EmpNm` → used in `getEmpNm()`, `setEmpNm()`)
+- `{javaField}` → Map key or setListDecryptAndMask field (e.g., `"empNm"` as String key)
+- `{VOType}` → VO class name (e.g., `EmployeeVO`, `UserSVO`)
+
+**Conversion rule**: From `java_field` in crypto_fields:
+- `java_field: "empNm"` → `{field}=empNm`, `{Field}=EmpNm`, `{javaField}="empNm"`
+
 ### Single-Record Encryption (ENCRYPT action)
 ```java
 String {field}Encr = "";

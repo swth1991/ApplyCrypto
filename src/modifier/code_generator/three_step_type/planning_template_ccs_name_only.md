@@ -163,13 +163,13 @@ outSVOs = (List<{VOType}>) {{ common_util }}.setListDecryptAndMask(outSVOs, targ
 
 ### When to Use Each Pattern
 
-| Scenario | Pattern | Action |
-|----------|---------|--------|
-| Single VO encryption | Single-Record Encryption | `ENCRYPT` |
-| Single VO decryption | Single-Record Decryption | `DECRYPT` |
-| List<VO> decryption (with masking) | setListDecryptAndMask + mask loop | `DECRYPT_LIST` |
-| List<VO> decryption (no masking) | setListDecryptAndMask(..., false) | `DECRYPT_LIST` |
-| Existing for-loop iterating List | Single-Record inside loop | `DECRYPT` |
+| Scenario | Pattern | Action | Note |
+|----------|---------|--------|------|
+| Single VO encryption | Single-Record Encryption | `ENCRYPT` | 단건 VO 암호화 |
+| Single VO decryption | Single-Record Decryption | `DECRYPT` | 단건 VO 복호화 |
+| List<VO> decryption (with masking) | setListDecryptAndMask + mask loop | `DECRYPT_LIST` | 배치 복호화 + 마스킹 |
+| List<VO> decryption (no masking) | setListDecryptAndMask(..., false) | `DECRYPT_LIST` | 배치 복호화, 마스킹 없음 |
+| Existing for-loop iterating List | Single-Record inside loop | `DECRYPT` | 기존 loop 활용, 단건 패턴 적용 |
 
 **Decision rule for List decryption:**
 - If code already has a for-loop iterating the list → use Single-Record pattern inside the loop
@@ -251,9 +251,7 @@ The following `mapping_info` was extracted in Phase 1 and contains all SQL query
         "crypto_fields": [
           {
             "column_name": "DB column name",
-            "java_field": "Java field name or Map key",
-            "getter": "getXxx (only for VO with provided VO file)",
-            "setter": "setXxx (only for VO with provided VO file)"
+            "java_field": "Java field name or Map key"
           }
         ]
       },
@@ -274,9 +272,8 @@ The following `mapping_info` was extracted in Phase 1 and contains all SQL query
 | `query_id` | Matches DAO/Mapper method name | Match with call chain to identify which query is called |
 | `command_type` | SQL command type | `SELECT` → DECRYPT results, `INSERT/UPDATE` → ENCRYPT inputs |
 | `sql_summary` | Query purpose description | Understand what the query does |
-| `crypto_fields` | Array of fields needing encryption | Contains `column_name`, `java_field`, and optional `getter/setter` |
-| `java_field` | Field name (VO) or Map key | Use for code generation (e.g., `vo.getJavaField()` or `map.get("java_field")`) |
-| `getter/setter` | Methods for VO types (optional) | Use directly in code_pattern_hint; **only present when VO file was provided in Phase 1** |
+| `crypto_fields` | Array of fields needing encryption | Contains `column_name` and `java_field` |
+| `java_field` | Field name (VO) or Map key | For VO: infer getter/setter (e.g., `empNm` → `getEmpNm()`, `setEmpNm()`). For Map: use as key (e.g., `map.get("java_field")`) |
 
 **Determining ENCRYPT/DECRYPT action:**
 
@@ -329,7 +326,8 @@ Call path from controller to SQL:
 
 **If Input/Output is a VO:**
 
-- **With `getter`/`setter` provided**: Use CCS utility wrapper patterns
+- **Infer getter/setter from `java_field`**: Follow standard JavaBean conventions
+  - `java_field: "empNm"` → `getEmpNm()` / `setEmpNm()`
   - ENCRYPT Example:
     ```java
     String empNmEncr = "";
@@ -350,8 +348,6 @@ Call path from controller to SQL:
     );
     vo.setEmpNm(empNmDecr);
     ```
-- **Without `getter`/`setter`** (VO file wasn't provided in Phase 1): Infer from `java_field`
-  - Assume standard JavaBean conventions: `getXxx()` / `setXxx()`
 
 **If Input/Output is a Map:**
 
@@ -558,10 +554,9 @@ For `direction: "BIDIRECTIONAL"` (e.g., search with encrypted WHERE + decrypted 
 3. **target_properties**: Array of `java_field` names (strings) from `crypto_fields`. Use the Java field name, not DB column name.
 4. **insertion_point**: Describe specifically so code can be inserted in the next step
 5. **code_pattern_hint**:
-   - For VO with getter/setter: Use them directly (e.g., `vo.setEmpNm(SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, vo.getEmpNm()));`)
-   - For VO without getter/setter: Infer from java_field (e.g., `java_field: "empNm"` → `vo.setEmpNm(...)`)
-   - For Map: Use java_field as key (e.g., `map.put("name", SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.NAME, (String)map.get("name")));`)
-6. **Use mapping_info.crypto_fields**: Reference `java_field`, and `getter`/`setter` (if present) for accurate code patterns
+   - For VO: Infer getter/setter from `java_field` (e.g., `java_field: "empNm"` → `vo.getEmpNm()`, `vo.setEmpNm(...)`)
+   - For Map: Use `java_field` as key (e.g., `map.put("name", SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.NAME, (String)map.get("name")));`)
+6. **Use mapping_info.crypto_fields**: Reference `java_field` for accurate code patterns (infer getter/setter using JavaBean conventions)
 7. **Always use `SliEncryptionConstants.Policy.NAME`** for all encryption/decryption operations
 
 ---
@@ -641,7 +636,7 @@ When `mapping_info` shows a name column in BOTH `input_mapping` AND `output_mapp
         "type_category": "VO",
         "class_name": "EmpVO",
         "crypto_fields": [
-          {"column_name": "emp_nm", "java_field": "empNm", "getter": "getEmpNm", "setter": "setEmpNm"}
+          {"column_name": "emp_nm", "java_field": "empNm"}
         ]
       },
       "output_mapping": {
@@ -663,7 +658,7 @@ When `mapping_info` shows a name column in BOTH `input_mapping` AND `output_mapp
         "type_category": "VO",
         "class_name": "EmpVO",
         "crypto_fields": [
-          {"column_name": "emp_nm", "java_field": "empNm", "getter": "getEmpNm", "setter": "setEmpNm"}
+          {"column_name": "emp_nm", "java_field": "empNm"}
         ]
       }
     }
@@ -830,7 +825,7 @@ resultMap.put("name", nameDecr);
     "type_category": "VO",
     "class_name": "Employee",
     "crypto_fields": [
-      {"column_name": "emp_nm", "java_field": "empNm", "getter": "getEmpNm", "setter": "setEmpNm"}
+      {"column_name": "emp_nm", "java_field": "empNm"}
     ]
   }
 }
@@ -884,7 +879,7 @@ Based on the information above:
 1. **For each call chain in call_stacks**, find the matching query in mapping_info
 2. **Check `crypto_fields` first** - if BOTH input_mapping AND output_mapping have empty crypto_fields → `action: "SKIP"`
 3. **Use `command_type`** and mapping location to determine ENCRYPT/DECRYPT action
-4. **Use `java_field`, `getter`, `setter`** from crypto_fields to generate accurate code patterns
+4. **Use `java_field`** from crypto_fields to generate accurate code patterns (infer getter/setter from java_field)
 5. **Output modification instructions** for each flow in JSON format
 6. **Always use `SliEncryptionConstants.Policy.NAME`** for all name fields
 

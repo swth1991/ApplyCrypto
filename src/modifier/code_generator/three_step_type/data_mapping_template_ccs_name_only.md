@@ -86,7 +86,7 @@ Columns with other types (dob, rrn, etc.) should be IGNORED.
 | `type_category` | Type of Java object: `VO`, `MAP`, `PRIMITIVE`, `NONE`                      |
 | `class_name`    | Simple class name without package (e.g., `UserVO`, `HashMap`)              |
 | `column_name`   | **Original DB column name** (the target column from table_info)            |
-| `java_field`    | Java field name from resultMap property or SQL alias (for Map types)       |
+| `java_field`    | For VO: resultMap `property` value. For Map: SQL alias if used, else column name (camelCase) |
 
 ---
 
