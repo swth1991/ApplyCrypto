@@ -123,8 +123,8 @@ import sli.fw.online.constants.SliEncryptionConstants;
 
 ### Required Imports (add if not present)
 ```java
-import sli.fw.util.{CommonUtil};    // BCCommUtil, CPCmpgnUtil, or CRCommonUtil
-import sli.fw.util.{MaskingUtil};   // BCMaskingUtil, CPMaskingUtil, or CRMaskingUtil
+import {{ common_util_import }};    // e.g., sli.ccs.bc.svcutil.BCCommonUtil
+import {{ masking_util_import }};   // e.g., sli.ccs.bc.svcutil.BCMaskingUtil
 import sli.fw.util.StringUtil;
 import sli.fw.mask.SliMaskingConstant;
 import java.util.HashMap;
@@ -134,7 +134,7 @@ import java.util.Map;
 ### Single-Record Encryption (ENCRYPT action)
 ```java
 String {field}Encr = "";
-{field}Encr = {CommonUtil}.encrypt(
+{field}Encr = {{ common_util }}.getDefaultValue(
     !StringUtil.isEmptyTrimmed(vo.get{Field}()),
     SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, vo.get{Field}(), true),
     SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, " ", true)
@@ -145,7 +145,7 @@ vo.set{Field}({field}Encr);
 ### Single-Record Decryption (DECRYPT action)
 ```java
 String {field}Decr = "";
-{field}Decr = {CommonUtil}.getDefaultValue(
+{field}Decr = {{ common_util }}.getDefaultValue(
     !StringUtil.isEmptyTrimmed(vo.get{Field}()),
     SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.NAME, vo.get{Field}(), true),
     SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.NAME, " ", true)
@@ -158,12 +158,20 @@ vo.set{Field}({field}Decr);
 // Step 1: Batch decrypt using setListDecryptAndMask
 Map<String, String> targetEncr = new HashMap<String, String>();
 targetEncr.put("{javaField}", SliEncryptionConstants.Policy.NAME);
-outSVOs = (List<{VOType}>) {CommonUtil}.setListDecryptAndMask(outSVOs, targetEncr);
+outSVOs = (List<{VOType}>) {{ common_util }}.setListDecryptAndMask(outSVOs, targetEncr);
 
 // Step 2: Mask name fields (xxxMask fields) - setListDecryptAndMask doesn't mask names
 for (int i = 0; i < outSVOs.size(); i++) {
-    outSVOs.get(i).set{Field}Mask({MaskingUtil}.mask(SliMaskingConstant.NAME, outSVOs.get(i).get{Field}()));
+    outSVOs.get(i).set{Field}Mask({{ masking_util }}.mask(SliMaskingConstant.NAME, outSVOs.get(i).get{Field}()));
 }
+```
+
+### Multi-Record Decryption WITHOUT Masking (DECRYPT_LIST action)
+```java
+Map<String, String> targetEncr = new HashMap<String, String>();
+targetEncr.put("{javaField}", SliEncryptionConstants.Policy.NAME);
+// Third parameter 'false' disables masking - no need for separate masking loop
+outSVOs = (List<{VOType}>) {{ common_util }}.setListDecryptAndMask(outSVOs, targetEncr, false);
 ```
 
 ---

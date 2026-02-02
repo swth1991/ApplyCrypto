@@ -8,6 +8,12 @@ Based on the information below, output specific modification instructions in JSO
 **Important**: Your role is **analysis and planning**. Actual code writing will be done in the next step.
 **This template focuses ONLY on NAME fields** - use `SliEncryptionConstants.Policy.NAME` for all operations.
 
+**★★★ IMPORTANT: Preserve Existing Encryption ★★★**
+- This template adds NAME field encryption/decryption ONLY
+- Existing encryption for other fields (DOB, RRN, TEL_NO, etc.) MUST remain unchanged
+- Only add new NAME-specific crypto logic; do NOT modify existing crypto code
+- If a method already has encryption/decryption for other fields, add NAME encryption alongside it
+
 ---
 
 ## Encryption Framework Information (SLI Encryption)
@@ -77,22 +83,12 @@ This project uses CCS-specific utility classes for encryption/decryption wrapper
 ### Configured Utility Classes
 {{ ccs_util_info }}
 
-### Required Imports (CCS Utilities)
-```java
-import sli.fw.util.{CommonUtil};    // BCCommUtil, CPCmpgnUtil, or CRCommonUtil
-import sli.fw.util.{MaskingUtil};   // BCMaskingUtil, CPMaskingUtil, or CRMaskingUtil
-import sli.fw.util.StringUtil;
-import sli.fw.mask.SliMaskingConstant;
-import java.util.HashMap;
-import java.util.Map;
-```
-
 ### Single-Record Encryption Pattern (★ CRITICAL: Null-safe wrapper)
 
-**For ENCRYPT action - Use `{CommonUtil}.encrypt()` wrapper:**
+**For ENCRYPT action - Use `{{ common_util }}.getDefaultValue()` wrapper:**
 ```java
 String nameEncr = "";
-nameEncr = {CommonUtil}.encrypt(
+nameEncr = {{ common_util }}.getDefaultValue(
     !StringUtil.isEmptyTrimmed(inputVO.get{Field}()),
     SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, inputVO.get{Field}(), true),
     SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, " ", true)
@@ -107,10 +103,10 @@ inputVO.set{Field}(nameEncr);
 
 ### Single-Record Decryption Pattern (★ CRITICAL: Null-safe wrapper)
 
-**For DECRYPT action - Use `{CommonUtil}.getDefaultValue()` wrapper:**
+**For DECRYPT action - Use `{{ common_util }}.getDefaultValue()` wrapper:**
 ```java
 String nameDecr = "";
-nameDecr = {CommonUtil}.getDefaultValue(
+nameDecr = {{ common_util }}.getDefaultValue(
     !StringUtil.isEmptyTrimmed(outputVO.get{Field}()),
     SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.NAME, outputVO.get{Field}(), true),
     SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.NAME, " ", true)
@@ -134,16 +130,36 @@ public static String getDefaultValue(boolean flag, String value, String defaultV
 Map<String, String> targetEncr = new HashMap<String, String>();
 targetEncr.put("{javaField1}", SliEncryptionConstants.Policy.NAME);
 targetEncr.put("{javaField2}", SliEncryptionConstants.Policy.NAME);
-outSVOs = (List<{VOType}>) {CommonUtil}.setListDecryptAndMask(outSVOs, targetEncr);
+outSVOs = (List<{VOType}>) {{ common_util }}.setListDecryptAndMask(outSVOs, targetEncr);
 ```
 
 **Step 2: Mask name fields separately (setListDecryptAndMask doesn't mask names)**
 ```java
 for (int i = 0; i < outSVOs.size(); i++) {
-    outSVOs.get(i).set{Field1}Mask({MaskingUtil}.mask(SliMaskingConstant.NAME, outSVOs.get(i).get{Field1}()));
-    outSVOs.get(i).set{Field2}Mask({MaskingUtil}.mask(SliMaskingConstant.NAME, outSVOs.get(i).get{Field2}()));
+    outSVOs.get(i).set{Field1}Mask({{ masking_util }}.mask(SliMaskingConstant.NAME, outSVOs.get(i).get{Field1}()));
+    outSVOs.get(i).set{Field2}Mask({{ masking_util }}.mask(SliMaskingConstant.NAME, outSVOs.get(i).get{Field2}()));
 }
 ```
+
+### Multi-Record Decryption WITHOUT Masking
+
+**Use third parameter `false` when masking should NOT be applied:**
+
+```java
+Map<String, String> targetEncr = new HashMap<String, String>();
+targetEncr.put("wrtr", SliEncryptionConstants.Policy.NAME);
+// Third parameter 'false' disables masking - no need for separate masking loop
+outSVOs = (List<{VOType}>) {{ common_util }}.setListDecryptAndMask(outSVOs, targetEncr, false);
+```
+
+**When to use `false` (no masking):**
+- Data is displayed in internal admin system (관리자 화면)
+- Data is used for further processing/calculations
+- Export to external systems that need plaintext
+
+**When to use default (with masking):**
+- Data is displayed to end users (고객 화면 출력)
+- Security/privacy requirements mandate masking
 
 ### When to Use Each Pattern
 
@@ -151,12 +167,14 @@ for (int i = 0; i < outSVOs.size(); i++) {
 |----------|---------|--------|
 | Single VO encryption | Single-Record Encryption | `ENCRYPT` |
 | Single VO decryption | Single-Record Decryption | `DECRYPT` |
-| List<VO> decryption (multiple records) | Multi-Record Decryption | `DECRYPT_LIST` |
+| List<VO> decryption (with masking) | setListDecryptAndMask + mask loop | `DECRYPT_LIST` |
+| List<VO> decryption (no masking) | setListDecryptAndMask(..., false) | `DECRYPT_LIST` |
 | Existing for-loop iterating List | Single-Record inside loop | `DECRYPT` |
 
 **Decision rule for List decryption:**
 - If code already has a for-loop iterating the list → use Single-Record pattern inside the loop
 - If no existing for-loop → use Multi-Record pattern (setListDecryptAndMask + masking loop)
+- If no masking needed → use Multi-Record pattern with third parameter `false`
 
 ---
 
@@ -315,7 +333,7 @@ Call path from controller to SQL:
   - ENCRYPT Example:
     ```java
     String empNmEncr = "";
-    empNmEncr = {CommonUtil}.encrypt(
+    empNmEncr = {{ common_util }}.getDefaultValue(
         !StringUtil.isEmptyTrimmed(vo.getEmpNm()),
         SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, vo.getEmpNm(), true),
         SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, " ", true)
@@ -325,7 +343,7 @@ Call path from controller to SQL:
   - DECRYPT Example:
     ```java
     String empNmDecr = "";
-    empNmDecr = {CommonUtil}.getDefaultValue(
+    empNmDecr = {{ common_util }}.getDefaultValue(
         !StringUtil.isEmptyTrimmed(vo.getEmpNm()),
         SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.NAME, vo.getEmpNm(), true),
         SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.NAME, " ", true)
@@ -341,7 +359,7 @@ Call path from controller to SQL:
 - DECRYPT Example:
   ```java
   String nameDecr = "";
-  nameDecr = {CommonUtil}.getDefaultValue(
+  nameDecr = {{ common_util }}.getDefaultValue(
       !StringUtil.isEmptyTrimmed((String)map.get("name")),
       SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.NAME, (String)map.get("name"), true),
       SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.NAME, " ", true)
@@ -355,7 +373,7 @@ Call path from controller to SQL:
 - ENCRYPT Example:
   ```java
   String empNmEncr = "";
-  empNmEncr = {CommonUtil}.encrypt(
+  empNmEncr = {{ common_util }}.getDefaultValue(
       !StringUtil.isEmptyTrimmed(empNm),
       SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, empNm, true),
       SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, " ", true)
@@ -385,14 +403,14 @@ This causes double encryption/decryption which corrupts data.
 ```java
 // ❌ WRONG: Crypto in both layers
 // Controller
-String nameEncr = {CommonUtil}.encrypt(!StringUtil.isEmptyTrimmed(vo.getName()),
+String nameEncr = {{ common_util }}.getDefaultValue(!StringUtil.isEmptyTrimmed(vo.getName()),
     SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, vo.getName(), true),
     SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, " ", true));
 vo.setName(nameEncr);  // First encryption
 employeeService.save(vo);
 
 // Service
-String nameEncr2 = {CommonUtil}.encrypt(!StringUtil.isEmptyTrimmed(vo.getName()),
+String nameEncr2 = {{ common_util }}.getDefaultValue(!StringUtil.isEmptyTrimmed(vo.getName()),
     SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, vo.getName(), true),
     SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, " ", true));
 vo.setName(nameEncr2);  // Double encryption! DATA CORRUPTED!
@@ -404,7 +422,7 @@ employeeService.save(vo);
 
 // Service - crypto logic HERE using CCS utility wrapper
 String nameEncr = "";
-nameEncr = {CommonUtil}.encrypt(
+nameEncr = {{ common_util }}.getDefaultValue(
     !StringUtil.isEmptyTrimmed(vo.getName()),
     SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, vo.getName(), true),
     SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, " ", true)
@@ -691,7 +709,7 @@ When `mapping_info` shows a name column in BOTH `input_mapping` AND `output_mapp
       "reason": "FLOW_001: INSERT command requires encryption before DB save",
       "target_properties": ["empNm"],
       "insertion_point": "Right before employeeDao.insert(vo) call",
-      "code_pattern_hint": "String empNmEncr = \"\";\nempNmEncr = {CommonUtil}.encrypt(\n    !StringUtil.isEmptyTrimmed(vo.getEmpNm()),\n    SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, vo.getEmpNm(), true),\n    SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, \" \", true)\n);\nvo.setEmpNm(empNmEncr);"
+      "code_pattern_hint": "String empNmEncr = \"\";\nempNmEncr = {{ common_util }}.getDefaultValue(\n    !StringUtil.isEmptyTrimmed(vo.getEmpNm()),\n    SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, vo.getEmpNm(), true),\n    SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, \" \", true)\n);\nvo.setEmpNm(empNmEncr);"
     },
     {
       "flow_id": "FLOW_002",
@@ -701,7 +719,7 @@ When `mapping_info` shows a name column in BOTH `input_mapping` AND `output_mapp
       "reason": "FLOW_002: SELECT command requires decryption after DB retrieval",
       "target_properties": ["empNm"],
       "insertion_point": "Right after DAO return, before return statement",
-      "code_pattern_hint": "String empNmDecr = \"\";\nempNmDecr = {CommonUtil}.getDefaultValue(\n    !StringUtil.isEmptyTrimmed(result.getEmpNm()),\n    SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.NAME, result.getEmpNm(), true),\n    SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.NAME, \" \", true)\n);\nresult.setEmpNm(empNmDecr);"
+      "code_pattern_hint": "String empNmDecr = \"\";\nempNmDecr = {{ common_util }}.getDefaultValue(\n    !StringUtil.isEmptyTrimmed(result.getEmpNm()),\n    SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.NAME, result.getEmpNm(), true),\n    SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.NAME, \" \", true)\n);\nresult.setEmpNm(empNmDecr);"
     }
   ]
 }
@@ -725,7 +743,7 @@ When `mapping_info` shows a name column in BOTH `input_mapping` AND `output_mapp
 **code_pattern_hint for Map:**
 ```java
 String nameDecr = "";
-nameDecr = {CommonUtil}.getDefaultValue(
+nameDecr = {{ common_util }}.getDefaultValue(
     !StringUtil.isEmptyTrimmed((String)resultMap.get("name")),
     SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.NAME, (String)resultMap.get("name"), true),
     SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.NAME, " ", true)
@@ -851,7 +869,7 @@ resultMap.put("name", nameDecr);
       "reason": "FLOW_001: BIDIRECTIONAL - search param needs ENCRYPT, results need DECRYPT",
       "target_properties": ["empNm"],
       "insertion_point": "ENCRYPT: Before employeeDao.selectByName() call; DECRYPT: After DAO return",
-      "code_pattern_hint": "// Before DAO call: encrypt search parameter\nString empNmEncr = \"\";\nempNmEncr = {CommonUtil}.encrypt(\n    !StringUtil.isEmptyTrimmed((String)searchParam.get(\"empNm\")),\n    SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, (String)searchParam.get(\"empNm\"), true),\n    SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, \" \", true)\n);\nsearchParam.put(\"empNm\", empNmEncr);\nList<Employee> resultList = employeeDao.selectByName(searchParam);\n// After DAO call: decrypt results\nfor (Employee e : resultList) {\n    String empNmDecr = {CommonUtil}.getDefaultValue(\n        !StringUtil.isEmptyTrimmed(e.getEmpNm()),\n        SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.NAME, e.getEmpNm(), true),\n        SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.NAME, \" \", true)\n    );\n    e.setEmpNm(empNmDecr);\n}"
+      "code_pattern_hint": "// Before DAO call: encrypt search parameter\nString empNmEncr = \"\";\nempNmEncr = {{ common_util }}.getDefaultValue(\n    !StringUtil.isEmptyTrimmed((String)searchParam.get(\"empNm\")),\n    SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, (String)searchParam.get(\"empNm\"), true),\n    SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, \" \", true)\n);\nsearchParam.put(\"empNm\", empNmEncr);\nList<Employee> resultList = employeeDao.selectByName(searchParam);\n// After DAO call: decrypt results\nfor (Employee e : resultList) {\n    String empNmDecr = {{ common_util }}.getDefaultValue(\n        !StringUtil.isEmptyTrimmed(e.getEmpNm()),\n        SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.NAME, e.getEmpNm(), true),\n        SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.NAME, \" \", true)\n    );\n    e.setEmpNm(empNmDecr);\n}"
     }
   ]
 }

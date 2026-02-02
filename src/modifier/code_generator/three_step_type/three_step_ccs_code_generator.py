@@ -27,10 +27,23 @@ from .three_step_code_generator import ThreeStepCodeGenerator
 logger = logging.getLogger("applycrypto")
 
 # CCS prefix별 유틸리티 클래스 매핑
+# package_prefix: sli.ccs.{prefix}.svcutil 형태의 import 경로에 사용
 CCS_UTIL_MAPPING: Dict[str, Dict[str, str]] = {
-    "BC": {"common_util": "BCCommUtil", "masking_util": "BCMaskingUtil"},
-    "CP": {"common_util": "CPCmpgnUtil", "masking_util": "CPMaskingUtil"},
-    "CR": {"common_util": "CRCommonUtil", "masking_util": "CRMaskingUtil"},
+    "BC": {
+        "common_util": "BCCommonUtil",
+        "masking_util": "BCMaskingUtil",
+        "package_prefix": "bc",
+    },
+    "CP": {
+        "common_util": "CPCmpgnUtil",
+        "masking_util": "CPMaskingUtil",
+        "package_prefix": "cp",
+    },
+    "CR": {
+        "common_util": "CRCommonUtil",
+        "masking_util": "CRMaskingUtil",
+        "package_prefix": "cr",
+    },
 }
 
 
@@ -373,6 +386,18 @@ class ThreeStepCCSCodeGenerator(ThreeStepCodeGenerator):
             modification_context.file_paths, table_access_info
         )
 
+        # CCS 유틸리티 클래스명 결정 (Jinja2 치환용)
+        common_util = (
+            self.ccs_util_info.get("common_util", "SliEncryptionUtil")
+            if self.ccs_util_info
+            else "SliEncryptionUtil"
+        )
+        masking_util = (
+            self.ccs_util_info.get("masking_util", "")
+            if self.ccs_util_info
+            else ""
+        )
+
         # 템플릿 변수 준비 (CCS 유틸리티 정보 포함)
         variables = {
             "table_info": table_info_str,
@@ -380,6 +405,8 @@ class ThreeStepCCSCodeGenerator(ThreeStepCodeGenerator):
             "mapping_info": mapping_info_str,
             "call_stacks": call_stacks_str,
             "ccs_util_info": self._format_ccs_util_info_for_prompt(),
+            "common_util": common_util,      # Jinja2 치환용: BCCommUtil 등
+            "masking_util": masking_util,    # Jinja2 치환용: BCMaskingUtil 등
         }
 
         # CCS 전용 planning 템플릿 사용
@@ -423,11 +450,44 @@ class ThreeStepCCSCodeGenerator(ThreeStepCodeGenerator):
             modification_instructions, indent=2, ensure_ascii=False
         )
 
+        # CCS 유틸리티 클래스명 및 import 경로 결정 (Jinja2 치환용)
+        common_util = (
+            self.ccs_util_info.get("common_util", "SliEncryptionUtil")
+            if self.ccs_util_info
+            else "SliEncryptionUtil"
+        )
+        masking_util = (
+            self.ccs_util_info.get("masking_util", "")
+            if self.ccs_util_info
+            else ""
+        )
+        package_prefix = (
+            self.ccs_util_info.get("package_prefix", "")
+            if self.ccs_util_info
+            else ""
+        )
+
+        # 전체 import 경로 생성: sli.ccs.{prefix}.svcutil.{UtilClass}
+        common_util_import = (
+            f"sli.ccs.{package_prefix}.svcutil.{common_util}"
+            if package_prefix
+            else ""
+        )
+        masking_util_import = (
+            f"sli.ccs.{package_prefix}.svcutil.{masking_util}"
+            if package_prefix and masking_util
+            else ""
+        )
+
         # 템플릿 변수 준비 (CCS 유틸리티 정보 포함)
         variables = {
             "source_files": source_files_str,
             "modification_instructions": instructions_str,
             "ccs_util_info": self._format_ccs_util_info_for_prompt(),
+            "common_util": common_util,                  # 클래스명: BCCommonUtil 등
+            "masking_util": masking_util,                # 클래스명: BCMaskingUtil 등
+            "common_util_import": common_util_import,    # 전체 import 경로
+            "masking_util_import": masking_util_import,  # 전체 import 경로
         }
 
         # CCS 전용 execution 템플릿 사용
