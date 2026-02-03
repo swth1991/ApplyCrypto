@@ -166,6 +166,12 @@ class CLIController:
             action="store_true",
             help="디버그 모드 활성화 (Diff 파일 저장 등)",
         )
+        modify_parser.add_argument(
+            "--target-table",
+            type=str,
+            default=None,
+            help="특정 대상 테이블만 처리합니다",
+        )
 
 
         # clear 명령어 서브파서
@@ -1264,6 +1270,9 @@ class CLIController:
             modification_logs = []
 
             for table_info in table_access_info_list:
+                if args.target_table and table_info.table_name != args.target_table:
+                    continue
+
                 self.logger.info(f"\n  테이블 '{table_info.table_name}' 처리 중...")
 
                 # 트래킹 시작 (테이블 단위)

@@ -75,15 +75,17 @@ Data mapping falls into two categories, each requiring a specific modification s
 1. **Input Mapping (`input_mapping`) - Encryption for Incoming Data**
    - **Context**: Occurs when data acts as input for a query (e.g., parameters in a `WHERE` clause or values in `INSERT`/`UPDATE`). The data must be encrypted *before* the database operation.
    - **Action**: Modify the SQL parameter placeholder to apply the TypeHandler inline.
-   - **Example**: Change `#{myName}` to `#{myName, typeHandler=com.example.typehandler.KsignIDNamValTypeHandler}`.
+   - **Example**: Change `#{myName}` to `#{myName, typeHandler=KsignIDNamValTypeHandler}`.
 
 2. **Output Mapping (`output_mapping`) - Decryption for Return Data**
    - **Context**: Occurs when data is returned from a `SELECT` query. The data must be decrypted properly before reaching upstream layers (Service, Controller).
    - **Action**: Ensure the query maps to a `<resultMap>` and attach the TypeHandler to the specific `<result>` tag.
    - **Example**: 
      ```xml
-     <result property="myName" column="MY_NAME" typeHandler="com.example.typehandler.KsignIDNamValTypeHandler" />
+     <result property="myName" column="MY_NAME" typeHandler="KsignIDNamValTypeHandler" />
      ```
+
+  **Notes**: `KsignIDNamValTypeHandler` is mapped with type alias, so no need to provide full path.
 
 ### Source Files to Modify
 
@@ -106,17 +108,47 @@ Check the target column type and choose the appropriate TypeHandler.
 1. **Check for ResultMap**: Determine if a ResultMap needs to be defined. Check if an existing ResultMap is already defined for the VO used by the query requiring encryption.
 2. **Define ResultMap**: If a ResultMap needs to be defined, provide instructions on how to define it. Include a code example as a hint.
 
+   **Instructions:**
+   - **id**: Set the ID based on the VO name by removing 'Dao' or 'DaoModel' suffixes and appending 'Map' (e.g., `ExampleDaoModel` → `ExampleMap`).
+   - **type**: `com.example.code.ExampleDaoModel` should be set as proper VO name. If you don't know about full path, just put VO name only (e.g., `ExampleDaoModel`).
+
    **Example:**
    ```xml
-   <resultMap id="exampleMap" type="com.example.code.ExampleDaoModel">
+   <resultMap id="exampleMap" type="ExampleDaoModel">
        <result property='name' column="NAME" />
        <!-- Example of attaching a TypeHandler -->
-       <result property='column_to_enc' column="COLUMN_TO_ENC" typeHandler="com.example.typehandler.KsignIDNamValTypeHandler" />
+       <result property='column_to_enc' column="COLUMN_TO_ENC" typeHandler="KsignIDNamValTypeHandler" />
    </resultMap>
    ```
    *Note: All property and column maps for the result should be provided.*
 
+
+
 3. **Modify SQL Query**: If a column needs to be encrypted but the ResultMap is not mapped in the query, provide instructions to modify the SQL query to use the ResultMap.
+
+case 1
+if previously using a result type for sql using column encrypted, and output mapping should be encrypted, replace it to resultMap
+
+```diff
+- <select id='selectExample' parameterType="ExampleDaoModel" resultType="exampleDaoModel">
++ <select id='selectExample' parameterType="ExampleDaoModel" resultMap="exampleMap">
+```
+
+case 2
+if table has an input_mapping encryption, encrypt through attaching typehandler to target column
+
+```diff
+<insert id='insertExample' parameterType="exampleDaoModel">
+INSERT INTO TABLE_EXAMPLE (
+  ID,
+  TARGET_COLUMN
+) VALUES (
+  #{id}
+-  ,#{targetColumn}
++  ,#{targetColumn, typeHandler=KsignIdNamValTypeHandler}
+)
+</insert>
+```
 
 ## Output Format
 
@@ -138,7 +170,7 @@ List each required modification using the structured format below. Ensure the `c
   <update id="updateEmployeeName" parameterType="com.example.vo.EmployeeVO">
       UPDATE TB_EMPLOYEE
       SET EMAIL = #{email}
-      WHERE NAME = #{name, typeHandler=com.example.typehandler.KsignIDNamValTypeHandler}
+      WHERE NAME = #{name, typeHandler=KsignIDNamValTypeHandler}
   </update>
   ```
 
