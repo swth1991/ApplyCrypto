@@ -1270,7 +1270,7 @@ class CLIController:
             modification_logs = []
 
             for table_info in table_access_info_list:
-                if args.target_table and table_info.table_name != args.target_table:
+                if args.target_table and table_info.table_name.lower() != args.target_table.lower():
                     continue
 
                 self.logger.info(f"\n  테이블 '{table_info.table_name}' 처리 중...")
