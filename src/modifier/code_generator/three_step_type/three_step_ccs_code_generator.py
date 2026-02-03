@@ -16,6 +16,7 @@ CCS 프로젝트의 특징:
 
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
@@ -224,6 +225,264 @@ class ThreeStepCCSCodeGenerator(ThreeStepCodeGenerator):
         template_str = self._load_template(self.data_mapping_template_ccs_path)
         return self._render_template(template_str, variables)
 
+    def _extract_column_to_alias_mapping(
+        self,
+        sql: str,
+        target_columns: List[str],
+    ) -> Dict[str, List[str]]:
+        """
+        SQL SELECT 절에서 target_columns에 해당하는 컬럼이 어떤 alias로 사용되는지 추출합니다.
+
+        처리하는 패턴:
+        1. 단순 AS: USER_NM AS AENAM
+        2. 테이블.컬럼 AS: A.USER_NM AS AENAM
+        3. 공백 alias (AS 생략): USER_NM AENAM
+        4. 서브쿼리 AS: (SELECT USER_NM FROM x) AS AENAM
+        5. 함수 내 컬럼: NVL(USER_NM, '') AS AENAM
+        6. alias 없음: SELECT USER_NM (자기 자신을 alias로)
+
+        Args:
+            sql: SQL 쿼리 텍스트
+            target_columns: 관심 대상 컬럼명 리스트 (예: ["USER_NM"])
+
+        Returns:
+            Dict[str, List[str]]: {원본컬럼_upper: [alias1, alias2, ...]}
+            예: {"USER_NM": ["AENAM", "TRTR_NM"]}
+        """
+        result: Dict[str, List[str]] = {col.upper(): [] for col in target_columns}
+        target_cols_upper = {col.upper() for col in target_columns}
+
+        # SQL을 대문자로 변환하여 비교 (원본은 보존)
+        sql_upper = sql.upper()
+
+        # SELECT 절 추출 (괄호 깊이를 고려하여 메인 FROM 찾기)
+        select_clause = self._extract_main_select_clause(sql_upper)
+        logger.debug(f"[DEBUG-1] SQL 원본 (처음 200자): {sql_upper[:200]}...")
+        logger.debug(f"[DEBUG-2] 추출된 SELECT 절 (처음 500자): {select_clause[:500] if select_clause else 'EMPTY'}...")
+        if not select_clause:
+            logger.warning("[DEBUG-3] SELECT 절 추출 실패!")
+            return result
+
+        # SELECT 절을 쉼표로 분리 (괄호 내부는 무시)
+        items = self._split_select_items(select_clause)
+        logger.debug(f"[DEBUG-4] 분리된 SELECT 항목 수: {len(items)}")
+
+        for item in items:
+            item = item.strip()
+            if not item:
+                continue
+
+            # 각 SELECT 항목에서 alias와 원본 컬럼 추출
+            original_col, alias = self._parse_select_item(item, target_cols_upper)
+            # target_columns와 매칭되는 경우만 로깅
+            if original_col:
+                logger.debug(f"[DEBUG-5] 항목 파싱 성공: item='{item[:80]}...' → original={original_col}, alias={alias}")
+
+            if original_col and original_col in target_cols_upper:
+                # alias가 있으면 추가, 없으면 자기 자신을 alias로
+                final_alias = alias if alias else original_col
+                if final_alias not in result[original_col]:
+                    result[original_col].append(final_alias)
+
+        return result
+
+    def _extract_main_select_clause(self, sql_upper: str) -> str:
+        """
+        괄호 깊이를 고려하여 메인 쿼리의 SELECT 절을 추출합니다.
+
+        서브쿼리 내부의 FROM은 무시하고, 괄호 깊이가 0인 FROM만 찾습니다.
+
+        Args:
+            sql_upper: 대문자로 변환된 SQL 쿼리
+
+        Returns:
+            str: SELECT와 메인 FROM 사이의 문자열 (없으면 빈 문자열)
+        """
+        # SELECT 키워드 찾기
+        select_match = re.search(r"\bSELECT\s+", sql_upper)
+        if not select_match:
+            return ""
+
+        start_pos = select_match.end()
+        depth = 0
+        i = start_pos
+
+        while i < len(sql_upper):
+            char = sql_upper[i]
+
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+            elif depth == 0:
+                # 괄호 깊이가 0일 때만 FROM 키워드 확인
+                if sql_upper[i:i+4] == "FROM" and (i == 0 or not sql_upper[i-1].isalnum()):
+                    # FROM 뒤에 공백이나 줄바꿈이 있는지 확인 (단어 경계)
+                    if i + 4 >= len(sql_upper) or not sql_upper[i+4].isalnum():
+                        return sql_upper[start_pos:i].strip()
+
+            i += 1
+
+        # FROM을 못 찾으면 전체 반환 (SELECT만 있는 경우)
+        return sql_upper[start_pos:].strip()
+
+    def _split_select_items(self, select_clause: str) -> List[str]:
+        """
+        SELECT 절을 쉼표로 분리합니다. 괄호 내부의 쉼표는 무시합니다.
+
+        Args:
+            select_clause: SELECT와 FROM 사이의 문자열
+
+        Returns:
+            List[str]: 분리된 SELECT 항목들
+        """
+        items = []
+        current = []
+        depth = 0
+
+        for char in select_clause:
+            if char == "(":
+                depth += 1
+                current.append(char)
+            elif char == ")":
+                depth -= 1
+                current.append(char)
+            elif char == "," and depth == 0:
+                items.append("".join(current))
+                current = []
+            else:
+                current.append(char)
+
+        if current:
+            items.append("".join(current))
+
+        return items
+
+    def _parse_select_item(
+        self,
+        item: str,
+        target_cols_upper: set,
+    ) -> Tuple[str, str]:
+        """
+        SELECT 항목에서 원본 컬럼과 alias를 추출합니다.
+
+        Args:
+            item: 단일 SELECT 항목 (예: "A.USER_NM AS AENAM")
+            target_cols_upper: 대상 컬럼 집합 (대문자)
+
+        Returns:
+            Tuple[str, str]: (원본컬럼_upper, alias_upper) 또는 (None, None)
+        """
+        item = item.strip()
+
+        # SQL 주석 제거 (/* ... */ 및 -- 스타일)
+        # /* ... */ 주석 제거
+        item = re.sub(r"/\*.*?\*/", "", item, flags=re.DOTALL)
+        # -- 주석 제거 (줄 끝까지)
+        item = re.sub(r"--.*$", "", item, flags=re.MULTILINE)
+        item = item.strip()
+
+        # 패턴 1: 명시적 AS alias
+        # 예: USER_NM AS AENAM, A.USER_NM AS AENAM, (SELECT ...) AS AENAM
+        as_match = re.search(r"\bAS\s+(\w+)\s*$", item, re.IGNORECASE)
+        if as_match:
+            alias = as_match.group(1).upper()
+            # AS 앞부분에서 원본 컬럼 찾기
+            before_as = item[: as_match.start()].strip()
+            original = self._extract_column_from_expression(before_as, target_cols_upper)
+            return (original, alias) if original else (None, None)
+
+        # 패턴 2: 공백 alias (AS 생략)
+        # 예: USER_NM AENAM (단, 괄호로 시작하지 않는 경우)
+        if not item.startswith("("):
+            # 마지막 단어가 alias일 수 있음 (단어가 2개 이상인 경우)
+            parts = item.split()
+            if len(parts) >= 2:
+                potential_alias = parts[-1].upper()
+                # alias가 키워드가 아닌 경우만
+                if not self._is_sql_keyword(potential_alias):
+                    before_alias = " ".join(parts[:-1])
+                    original = self._extract_column_from_expression(
+                        before_alias, target_cols_upper
+                    )
+                    if original:
+                        return (original, potential_alias)
+
+        # 패턴 3: alias 없음 - 단순 컬럼 또는 테이블.컬럼
+        original = self._extract_column_from_expression(item, target_cols_upper)
+        if original:
+            return (original, None)
+
+        return (None, None)
+
+    def _extract_column_from_expression(
+        self,
+        expr: str,
+        target_cols_upper: set,
+    ) -> str:
+        """
+        표현식에서 target_columns에 해당하는 컬럼명을 추출합니다.
+
+        처리하는 케이스:
+        - 단순 컬럼: USER_NM
+        - 테이블.컬럼: A.USER_NM
+        - 서브쿼리: (SELECT USER_NM FROM ...)
+        - 함수: NVL(USER_NM, ''), DECODE(A.USER_NM, ...)
+
+        Args:
+            expr: SQL 표현식
+            target_cols_upper: 대상 컬럼 집합 (대문자)
+
+        Returns:
+            str: 찾은 컬럼명 (대문자) 또는 None
+        """
+        expr_upper = expr.upper()
+
+        # target_columns 중 표현식에 포함된 컬럼 찾기
+        for col in target_cols_upper:
+            # 단어 경계를 사용하여 정확한 매칭
+            # A.USER_NM, USER_NM, NVL(USER_NM, ...) 등 모두 매칭
+            pattern = rf"\b{re.escape(col)}\b"
+            if re.search(pattern, expr_upper):
+                return col
+
+        return None
+
+    def _is_sql_keyword(self, word: str) -> bool:
+        """SQL 키워드인지 확인합니다."""
+        keywords = {
+            "SELECT", "FROM", "WHERE", "AND", "OR", "NOT", "NULL", "IS",
+            "IN", "LIKE", "BETWEEN", "EXISTS", "CASE", "WHEN", "THEN",
+            "ELSE", "END", "AS", "ON", "JOIN", "LEFT", "RIGHT", "INNER",
+            "OUTER", "FULL", "CROSS", "ORDER", "BY", "GROUP", "HAVING",
+            "UNION", "ALL", "DISTINCT", "TOP", "LIMIT", "OFFSET", "INTO",
+            "VALUES", "SET", "UPDATE", "DELETE", "INSERT", "CREATE", "DROP",
+            "ALTER", "TABLE", "INDEX", "VIEW", "TRIGGER", "PROCEDURE",
+            "FUNCTION", "BEGIN", "COMMIT", "ROLLBACK", "GRANT", "REVOKE",
+        }
+        return word.upper() in keywords
+
+    def _find_original_column(
+        self,
+        alias: str,
+        column_to_aliases: Dict[str, List[str]],
+    ) -> str:
+        """
+        alias에서 원본 컬럼을 역추적합니다.
+
+        Args:
+            alias: SQL alias (대문자)
+            column_to_aliases: {원본컬럼: [alias1, alias2, ...]} 매핑
+
+        Returns:
+            str: 원본 컬럼명 또는 None
+        """
+        alias_upper = alias.upper()
+        for original_col, aliases in column_to_aliases.items():
+            if alias_upper in [a.upper() for a in aliases]:
+                return original_col
+        return None
+
     def _format_ccs_sql_with_relevant_mappings(
         self,
         table_access_info: TableAccessInfo,
@@ -233,7 +492,8 @@ class ThreeStepCCSCodeGenerator(ThreeStepCodeGenerator):
         """
         CCS용 SQL 쿼리와 관련 필드 매핑을 함께 포맷팅합니다.
 
-        각 쿼리 밑에 target_columns에 해당하는 필드 매핑만 자연어로 설명합니다.
+        SQL에서 alias를 추출하여 resultMap 매핑과 연결합니다.
+        이를 통해 alias가 있는 경우에도 정확한 매핑을 제공합니다.
 
         Args:
             table_access_info: 테이블 접근 정보
@@ -243,9 +503,6 @@ class ThreeStepCCSCodeGenerator(ThreeStepCodeGenerator):
         Returns:
             str: 포맷팅된 SQL 쿼리 + 매핑 정보 문자열
         """
-        # target_columns를 대문자로 정규화 (비교용)
-        target_cols_upper = {col.upper() for col in target_columns}
-
         # 파일 경로에서 클래스명 추출 (필터링용)
         file_class_names = set()
         if file_paths:
@@ -304,19 +561,48 @@ class ThreeStepCCSCodeGenerator(ThreeStepCodeGenerator):
                 output_parts.append(f"- **Result Type:** `{result_type}`")
             output_parts.append("")
 
-            # 관련 필드 매핑 (target_columns만 필터링)
+            # 관련 필드 매핑 (alias 기반 필터링)
             relevant_mappings = []
 
             if query_type == "SELECT":
-                # resultMap에서 추출한 필드 매핑
+                # Step 1: SQL에서 target_columns의 alias 추출
+                column_to_aliases = self._extract_column_to_alias_mapping(
+                    sql_text, target_columns
+                )
+                logger.info(f"[DEBUG-6] Query {query_id}: column_to_aliases = {column_to_aliases}")
+
+                # Step 2: alias 집합 구성 (target_columns + 그들의 alias들)
+                relevant_aliases = set()
+                for col in target_columns:
+                    col_upper = col.upper()
+                    relevant_aliases.add(col_upper)  # 원본 컬럼도 포함
+                    for alias in column_to_aliases.get(col_upper, []):
+                        relevant_aliases.add(alias.upper())
+                logger.info(f"[DEBUG-7] Query {query_id}: relevant_aliases = {relevant_aliases}")
+
+                # Step 3: resultMap에서 relevant_aliases에 해당하는 매핑만 필터링
                 result_field_mappings = strategy_specific.get(
                     "result_field_mappings", []
                 )
+                logger.info(f"[DEBUG-8] Query {query_id}: result_field_mappings = {result_field_mappings[:5]}... (총 {len(result_field_mappings)}개)")
                 for java_field, db_column in result_field_mappings:
-                    if db_column.upper() in target_cols_upper:
-                        relevant_mappings.append(
-                            f"- Column `{db_column}` → Java field `{java_field}`"
+                    db_col_upper = db_column.upper()
+                    if db_col_upper in relevant_aliases:
+                        # 원본 컬럼 역추적
+                        original_col = self._find_original_column(
+                            db_column, column_to_aliases
                         )
+                        if original_col and original_col != db_col_upper:
+                            # alias가 있는 경우: 원본 컬럼과 alias 함께 표시
+                            relevant_mappings.append(
+                                f"- Column `{original_col}` (aliased as `{db_column}`) "
+                                f"→ Java field `{java_field}`"
+                            )
+                        else:
+                            # 직접 매핑인 경우
+                            relevant_mappings.append(
+                                f"- Column `{db_column}` → Java field `{java_field}`"
+                            )
 
             elif query_type in ("INSERT", "UPDATE"):
                 # SQL 내 #{fieldName} 패턴
