@@ -313,6 +313,7 @@ class ThreeStepCCSBatchCodeGenerator(ThreeStepCodeGenerator):
             "table_info": table_info_str,
             "source_files": source_files_str,
             "mapping_info": mapping_info_str,
+            "dqm_java_info": "",  # CCS Batch는 BAT.java가 SQL id를 직접 참조하므로 DQM 불필요
         }
 
         template_str = self._load_template(self.planning_template_ccs_batch_path)

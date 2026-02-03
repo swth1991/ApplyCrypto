@@ -351,6 +351,86 @@ class ThreeStepCCSCodeGenerator(ThreeStepCodeGenerator):
         logger.info(f"CCS SQL 쿼리 포맷팅 완료: {query_num}개 쿼리")
         return "\n".join(output_parts)
 
+    # ========== DQM.java 정보 추출 (Phase 2용) ==========
+
+    def _extract_dqm_java_info(
+        self,
+        modification_context: ModificationContext,
+        table_access_info: TableAccessInfo,
+    ) -> str:
+        """
+        현재 컨텍스트에서 실제로 import하는 DQM.java 파일만 찾아 전체 내용을 반환합니다.
+
+        CCS 프로젝트에서 XML query id와 Java 메서드 간의 연결 정보를 제공하기 위해
+        DQM.java 파일 내용을 Planning 프롬프트에 포함시킵니다.
+
+        Args:
+            modification_context: 수정 컨텍스트 (CTL, SVCImpl 파일 경로 포함)
+            table_access_info: 테이블 접근 정보 (layer_files 포함)
+
+        Returns:
+            str: 관련 DQM.java 파일들의 전체 내용 (없으면 빈 문자열)
+        """
+        # Step 1: CTL, SVCImpl 파일에서 import된 DQM 클래스명 추출
+        imported_dqm_classes = set()
+        for file_path in modification_context.file_paths:
+            try:
+                content = Path(file_path).read_text(encoding="utf-8")
+                for line in content.split("\n"):
+                    line = line.strip()
+                    # import 문에서 DQM 클래스 추출
+                    # 예: import com.example.dqm.UserDQM;
+                    if line.startswith("import ") and "DQM" in line:
+                        # 세미콜론 제거 후 마지막 부분(클래스명) 추출
+                        class_part = line.replace(";", "").split(".")[-1].strip()
+                        if class_part.upper().endswith("DQM"):
+                            imported_dqm_classes.add(class_part)
+            except Exception as e:
+                logger.warning(f"DQM import 추출 실패: {file_path} - {e}")
+                continue
+
+        if not imported_dqm_classes:
+            logger.debug("import된 DQM 클래스가 없습니다.")
+            return ""
+
+        logger.info(f"import된 DQM 클래스: {imported_dqm_classes}")
+
+        # Step 2: layer_files에서 import된 DQM.java 파일만 찾기
+        dqm_java_files = []
+        for layer_key in ["dqm", "repository"]:
+            layer_files_list = table_access_info.layer_files.get(layer_key, [])
+            for file_path in layer_files_list:
+                if not file_path.lower().endswith(".java"):
+                    continue
+                file_name = Path(file_path).stem  # 예: UserDQM
+                if file_name in imported_dqm_classes:
+                    if file_path not in dqm_java_files:
+                        dqm_java_files.append(file_path)
+
+        if not dqm_java_files:
+            logger.debug("layer_files에서 매칭되는 DQM.java 파일을 찾지 못했습니다.")
+            return ""
+
+        logger.info(f"Planning에 포함할 DQM.java 파일: {len(dqm_java_files)}개")
+
+        # Step 3: DQM.java 파일 내용 읽어서 포맷팅
+        output_parts = []
+        for file_path in dqm_java_files:
+            try:
+                content = Path(file_path).read_text(encoding="utf-8")
+                file_name = Path(file_path).name
+                output_parts.append(f"### {file_name}")
+                output_parts.append("")
+                output_parts.append("```java")
+                output_parts.append(content)
+                output_parts.append("```")
+                output_parts.append("")
+            except Exception as e:
+                logger.warning(f"DQM.java 파일 읽기 실패: {file_path} - {e}")
+                continue
+
+        return "\n".join(output_parts)
+
     # ========== Phase 2 오버라이드: CCS 전용 Planning ==========
 
     def _create_planning_prompt(
@@ -386,6 +466,11 @@ class ThreeStepCCSCodeGenerator(ThreeStepCodeGenerator):
             modification_context.file_paths, table_access_info
         )
 
+        # DQM.java 정보 추출 (XML query id ↔ Java 메서드 매핑용)
+        dqm_java_info = self._extract_dqm_java_info(
+            modification_context, table_access_info
+        )
+
         # CCS 유틸리티 클래스명 결정 (Jinja2 치환용)
         common_util = (
             self.ccs_util_info.get("common_util", "SliEncryptionUtil")
@@ -404,6 +489,7 @@ class ThreeStepCCSCodeGenerator(ThreeStepCodeGenerator):
             "source_files": source_files_str,
             "mapping_info": mapping_info_str,
             "call_stacks": call_stacks_str,
+            "dqm_java_info": dqm_java_info,  # DQM.java 파일 내용 (XML↔Java 매핑용)
             "ccs_util_info": self._format_ccs_util_info_for_prompt(),
             "common_util": common_util,      # Jinja2 치환용: BCCommUtil 등
             "masking_util": masking_util,    # Jinja2 치환용: BCMaskingUtil 등

@@ -81,6 +81,22 @@ Columns with other types (dob, rrn, etc.) should be IGNORED.
 
 {{ mapping_info }}
 
+### DQM Interface (★★★ XML Query → Java Method Mapping ★★★)
+
+The following DQM.java files show how XML queries are mapped to Java methods.
+**Use this to understand which Java method calls which SQL query.**
+
+**Key Pattern in CCS Batch:**
+- XML query id: `namespace-methodName` (e.g., `com.example.dqm-selectUser`)
+- In BAT.java: `itemFactory.getItemReader("namespace-methodName", VO.class)` or similar
+
+**How to use:**
+1. Find the SQL id used in BAT.java (e.g., `itemFactory.getItemReader("com.example.dqm-selectUser", ...)`)
+2. Match that query id with `mapping_info.queries[].query_id`
+3. Use `mapping_info.crypto_fields` to determine encryption/decryption needs
+
+{{ dqm_java_info }}
+
 ### Source Files to Modify
 
 {{ source_files }}

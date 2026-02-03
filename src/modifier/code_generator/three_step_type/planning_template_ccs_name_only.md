@@ -300,6 +300,23 @@ Use the alias for Map operations: `map.get("name")` / `map.put("name", ...)`
 Call path from controller to SQL:
 {{ call_stacks }}
 
+### DQM Interface (★★★ XML Query → Java Method Mapping ★★★)
+
+The following DQM.java files show how XML queries are mapped to Java methods.
+**Use this to understand which Java method calls which SQL query.**
+
+**Key Pattern in CCS:**
+- XML query id: `namespace-methodName` (e.g., `com.example.dqm-selectUser`)
+- DQM.java method: `methodName(...)` internally calls `selectList("namespace-methodName", param)` or similar
+
+**How to use:**
+1. Find the DQM method called in SVCImpl (e.g., `userDQM.selectUser(vo)`)
+2. Look at the DQM.java code below to see which XML query id it calls
+3. Match that query id with `mapping_info.queries[].query_id`
+4. Use `mapping_info.crypto_fields` to determine encryption/decryption needs
+
+{{ dqm_java_info }}
+
 ### Source Files to Modify
 
 {{ source_files }}
