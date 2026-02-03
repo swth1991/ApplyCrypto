@@ -488,7 +488,7 @@ class JavaASTParser:
     ) -> Optional[Method]:
         """
         메서드 정보 추출
-
+        
         Args:
             node: 메서드 선언 노드
             class_name: 클래스명
@@ -505,6 +505,7 @@ class JavaASTParser:
             file_path=str(file_path),
             line_number=node.start_point[0] + 1,
             end_line_number=node.end_point[0] + 1,
+            body=node.text.decode("utf8") # Added body content
         )
 
         # 메서드 어노테이션 및 접근 제어자
