@@ -120,35 +120,35 @@ Check the target column type and choose the appropriate TypeHandler.
        <result property='column_to_enc' column="COLUMN_TO_ENC" typeHandler="KsignIDNamValTypeHandler" />
    </resultMap>
    ```
-   *Note: All property and column maps for the result should be provided.*
+   **CRITICAL**: You MUST include **ALL** properties from the Value Object (VO) in the `resultMap`. Do not omit any result items. Your job is to add all information from the VO to the `resultMap` to ensure the developer does not need to manually modify it later. **Automapping is NOT supported.**
 
 
 
 3. **Modify SQL Query**: If a column needs to be encrypted but the ResultMap is not mapped in the query, provide instructions to modify the SQL query to use the ResultMap.
 
-case 1
-if previously using a result type for sql using column encrypted, and output mapping should be encrypted, replace it to resultMap
+   **Case 1: Switching to ResultMap (Output Mapping)**
+   If a `SELECT` query retrieves encrypted columns and currently uses `resultType`, you **must** replace it with `resultMap`. This ensures the TypeHandlers defined in the ResultMap are applied for decryption.
 
-```diff
-- <select id='selectExample' parameterType="ExampleDaoModel" resultType="exampleDaoModel">
-+ <select id='selectExample' parameterType="ExampleDaoModel" resultMap="ExampleMap">
-```
+   ```diff
+   - <select id='selectExample' parameterType="ExampleDaoModel" resultType="exampleDaoModel">
+   + <select id='selectExample' parameterType="ExampleDaoModel" resultMap="ExampleMap">
+   ```
 
-case 2
-if table has an input_mapping encryption, encrypt through attaching typehandler to target column
+   **Case 2: Inline TypeHandler (Input Mapping)**
+   For `INSERT` or `UPDATE` operations involving encrypted columns, you must encrypt the data by attaching the TypeHandler directly to the parameter placeholder.
 
-```diff
-<insert id='insertExample' parameterType="exampleDaoModel">
-INSERT INTO TABLE_EXAMPLE (
-  ID,
-  TARGET_COLUMN
-) VALUES (
-  #{id}
--  ,#{targetColumn}
-+  ,#{targetColumn, typeHandler=KsignIdNamValTypeHandler}
-)
-</insert>
-```
+   ```diff
+   <insert id='insertExample' parameterType="exampleDaoModel">
+   INSERT INTO TABLE_EXAMPLE (
+     ID,
+     TARGET_COLUMN
+   ) VALUES (
+     #{id}
+   -  ,#{targetColumn}
+   +  ,#{targetColumn, typeHandler=KsignIdNamValTypeHandler}
+   )
+   </insert>
+   ```
 
 ## Output Format
 
