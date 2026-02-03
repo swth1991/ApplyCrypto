@@ -114,7 +114,7 @@ Check the target column type and choose the appropriate TypeHandler.
 
    **Example:**
    ```xml
-   <resultMap id="exampleMap" type="ExampleDaoModel">
+   <resultMap id="ExampleMap" type="ExampleDaoModel">
        <result property='name' column="NAME" />
        <!-- Example of attaching a TypeHandler -->
        <result property='column_to_enc' column="COLUMN_TO_ENC" typeHandler="KsignIDNamValTypeHandler" />
@@ -131,7 +131,7 @@ if previously using a result type for sql using column encrypted, and output map
 
 ```diff
 - <select id='selectExample' parameterType="ExampleDaoModel" resultType="exampleDaoModel">
-+ <select id='selectExample' parameterType="ExampleDaoModel" resultMap="exampleMap">
++ <select id='selectExample' parameterType="ExampleDaoModel" resultMap="ExampleMap">
 ```
 
 case 2
