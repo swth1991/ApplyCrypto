@@ -140,3 +140,49 @@ class TypeHandlerCodeGenerator(ThreeStepCodeGenerator):
         prompt = self._render_template(template_str, variables)
 
         return prompt, index_to_path, file_mapping, path_to_content
+
+    def _get_sql_queries_for_prompt(
+        self, table_access_info: TableAccessInfo, file_paths: List[str] = None
+    ) -> str:
+        """
+        Planning LLM에 전달할 SQL 쿼리 정보를 포맷팅합니다.
+
+        Args:
+            table_access_info: 테이블 접근 정보
+            file_paths: 파일 경로 리스트 (지정 시 관련 SQL만 필터링)
+
+        Returns:
+            str: JSON 형식의 SQL 쿼리 정보 문자열
+        """
+        relevant_queries = []
+
+        for sql_query in table_access_info.sql_queries:
+            strategy_specific = sql_query.get("strategy_specific", {})
+            strategy_str = ""
+            if strategy_specific:
+                parts = []
+                if "parameter_type" in strategy_specific:
+                    parts.append(
+                        f"Parameter Type: {strategy_specific['parameter_type']}"
+                    )
+                if "result_type" in strategy_specific:
+                    parts.append(f"Result Type: {strategy_specific['result_type']}")
+                if "result_map" in strategy_specific:
+                    parts.append(f"Result Map: {strategy_specific['result_map']}")
+                if "namespace" in strategy_specific:
+                    parts.append(f"Namespace: {strategy_specific['namespace']}")
+                strategy_str = ", ".join(parts)
+
+            relevant_queries.append(
+                {
+                    "id": sql_query.get("id"),
+                    "query_type": sql_query.get("query_type"),
+                    "sql": sql_query.get("sql"),
+                    "call_stacks": sql_query.get("call_stacks", []),
+                    "source_file": sql_query.get("source_file_path"),
+                    "strategy_specific": strategy_specific,
+                    "strategy_description": strategy_str,
+                }
+            )
+
+        return json.dumps(relevant_queries, indent=2, ensure_ascii=False)
