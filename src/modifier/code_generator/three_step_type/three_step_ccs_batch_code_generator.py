@@ -153,6 +153,12 @@ class ThreeStepCCSBatchCodeGenerator(ThreeStepCodeGenerator):
         # 응답 파싱
         mapping_info = self._parse_json_response(response, "Query Analysis")
 
+        # mapping_info의 각 쿼리에 target_table 및 target_columns 메타데이터 추가
+        # Phase 2에서 target table 접근 여부를 재평가하지 않도록 명시적 정보 제공
+        mapping_info = self._enrich_mapping_info_with_target_metadata(
+            mapping_info, table_access_info
+        )
+
         # 결과 저장
         self._save_phase_result(
             session_dir=session_dir,
@@ -168,6 +174,45 @@ class ThreeStepCCSBatchCodeGenerator(ThreeStepCodeGenerator):
         logger.info(f"Query Analysis 완료: {query_count}개 쿼리")
 
         return mapping_info, tokens_used
+
+    def _enrich_mapping_info_with_target_metadata(
+        self,
+        mapping_info: Dict[str, Any],
+        table_access_info: TableAccessInfo,
+    ) -> Dict[str, Any]:
+        """
+        mapping_info의 각 쿼리에 target_table 및 target_columns 정보를 추가합니다.
+
+        Phase 2 LLM이 target table 접근 여부를 재평가하지 않도록
+        Phase 1에서 검증된 정보를 명시적으로 포함시킵니다.
+
+        Args:
+            mapping_info: Phase 1에서 파싱된 쿼리 분석 결과
+            table_access_info: 테이블 접근 정보 (target table/columns 포함)
+
+        Returns:
+            Dict[str, Any]: target metadata가 추가된 mapping_info
+        """
+        target_table = table_access_info.table_name
+        target_columns = [col["name"] for col in table_access_info.columns]
+
+        # summary에 target 정보 추가
+        if "summary" not in mapping_info:
+            mapping_info["summary"] = {}
+        mapping_info["summary"]["target_table"] = target_table
+        mapping_info["summary"]["target_columns"] = target_columns
+
+        # 각 쿼리에도 target 정보 추가 (Phase 2에서 명확하게 인식할 수 있도록)
+        if "queries" in mapping_info:
+            for query in mapping_info["queries"]:
+                query["target_table"] = target_table
+                query["target_columns"] = target_columns
+
+        logger.debug(
+            f"mapping_info에 target metadata 추가 완료: "
+            f"table={target_table}, columns={target_columns}"
+        )
+        return mapping_info
 
     def _create_ccs_batch_data_mapping_prompt(
         self,

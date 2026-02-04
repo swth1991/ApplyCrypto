@@ -79,6 +79,15 @@ Columns with other types (dob, rrn, etc.) should be IGNORED.
 
 ### Data Mapping Summary (★ Pre-analyzed from Phase 1)
 
+**★★★ CRITICAL: Trust Phase 1 Results ★★★**
+
+**IMPORTANT: If a query appears in `mapping_info`, it HAS ALREADY BEEN VERIFIED to access the target table.**
+
+- Phase 1 analyzed ALL SQL queries and filtered ONLY those accessing the target table
+- Do NOT re-evaluate whether a query accesses the target table
+- The target table may be accessed via subquery, JOIN, or other complex SQL patterns
+- If `crypto_fields` is non-empty, encryption/decryption IS required - trust this analysis
+
 {{ mapping_info }}
 
 ### DQM Interface (★★★ XML Query → Java Method Mapping ★★★)

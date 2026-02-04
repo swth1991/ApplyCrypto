@@ -104,6 +104,14 @@ The following `mapping_info` was extracted in Phase 1 and contains all SQL query
 
 **★★★ CRITICAL: Trust Phase 1 Results ★★★**
 
+**IMPORTANT: If a query appears in `mapping_info`, it HAS ALREADY BEEN VERIFIED to access the target table.**
+
+- Phase 1 analyzed ALL SQL queries and filtered ONLY those accessing the target table
+- Do NOT re-evaluate whether a query accesses the target table
+- The target table may be accessed via subquery, JOIN, or other complex SQL patterns
+- If `crypto_fields` is non-empty, encryption/decryption IS required - trust this analysis
+
+**Field Presence Rules:**
 - If `input_mapping.crypto_fields` is empty → NO encryption needed for input
 - If `output_mapping.crypto_fields` is empty → NO decryption needed for output
 - If BOTH are empty → `action: "SKIP"` (this query doesn't involve target columns)
