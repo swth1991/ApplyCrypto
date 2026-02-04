@@ -65,6 +65,7 @@ public void saveEmployee(EmployeeVO vo) {
 ```java
 public void saveEmployee(EmployeeVO vo) {
     // 직원 정보 저장
+    // AI 암호화 적용
     vo.setEmpNm(SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, vo.getEmpNm()));
     employeeDao.insert(vo);
 }
@@ -144,6 +145,7 @@ import java.util.Map;
 
 ### Single-Record Encryption (ENCRYPT action)
 ```java
+// AI 암호화 적용
 String {field}Encr = "";
 {field}Encr = {{ common_util }}.getDefaultValue(
     !StringUtil.isEmptyTrimmed(vo.get{Field}()),
@@ -155,6 +157,7 @@ vo.set{Field}({field}Encr);
 
 ### Single-Record Decryption (DECRYPT action)
 ```java
+// AI 암호화 적용
 String {field}Decr = "";
 {field}Decr = {{ common_util }}.getDefaultValue(
     !StringUtil.isEmptyTrimmed(vo.get{Field}()),
@@ -166,6 +169,7 @@ vo.set{Field}({field}Decr);
 
 ### Multi-Record Decryption (DECRYPT_LIST action)
 ```java
+// AI 암호화 적용
 // Step 1: Batch decrypt using setListDecryptAndMask
 Map<String, String> targetEncr = new HashMap<String, String>();
 targetEncr.put("{javaField}", SliEncryptionConstants.Policy.NAME);
@@ -179,6 +183,7 @@ for (int i = 0; i < outSVOs.size(); i++) {
 
 ### Multi-Record Decryption WITHOUT Masking (DECRYPT_LIST action)
 ```java
+// AI 암호화 적용
 Map<String, String> targetEncr = new HashMap<String, String>();
 targetEncr.put("{javaField}", SliEncryptionConstants.Policy.NAME);
 // Third parameter 'false' disables masking - no need for separate masking loop
@@ -219,6 +224,7 @@ Before generating output, verify:
 2. ☐ Did I insert code at each `insertion_point` specified?
 3. ☐ Did I use the correct `code_pattern_hint` for each field?
 4. ☐ Did I add necessary imports (SliEncryptionUtil, etc.)?
+5. ☐ **Did I add `// AI 암호화 적용` comment before each modification block?**
 
 **If ANY instruction was missed, go back and apply it before outputting.**
 
@@ -256,7 +262,7 @@ public class EmployeeService {
     private EmployeeDao employeeDao;
 
     public void saveEmployee(EmployeeVO vo) {
-        // Encryption processing
+        // AI 암호화 적용
         vo.setEmpNm(SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, vo.getEmpNm()));
 
         employeeDao.insert(vo);
@@ -303,3 +309,4 @@ Execute the modification instructions for each file and output results in the sp
 6. **Follow insertion_point exactly**: Insert encryption/decryption code at the exact location specified in the instructions
 7. **Preserve all existing code**: Do not remove or modify any existing code other than the encryption/decryption additions
 8. **No explanations**: Do not add any explanations or reasoning. Just output the code.
+9. **Add tracking comment**: Every encryption/decryption code block must start with `// AI 암호화 적용`
