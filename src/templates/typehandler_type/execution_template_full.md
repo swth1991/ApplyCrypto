@@ -25,6 +25,9 @@ You must preserve the original file strictly, except for the requested changes.
 4.  **Strict File Indices**:
     - Identify files ONLY by their index (e.g., `======FILE_1======`).
     - Do NOT output the actual filename.
+5.  **Example Code Rules**:
+    - When applying example code from Phase 2 instructions, **REMOVE** comments from the example. Apply **ONLY** the code.
+    - When working `<resultMap>`, Format `<result>` items on a **SINGLE LINE**, even if the example code displays them on multiple lines.
 
 ---
 
