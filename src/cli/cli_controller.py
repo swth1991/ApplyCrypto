@@ -430,9 +430,8 @@ class CLIController:
             # EndpointExtractionStrategy 생성
             from parser.endpoint_strategy import EndpointExtractionStrategyFactory
 
-            framework_type = config.framework_type if hasattr(config, "framework_type") else "SpringMVC"
             endpoint_strategy = EndpointExtractionStrategyFactory.create(
-                framework_type=framework_type,
+                config=config,
                 java_parser=java_parser,
                 cache_manager=cache_manager,
             )

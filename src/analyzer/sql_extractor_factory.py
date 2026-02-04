@@ -40,7 +40,7 @@ class SQLExtractorFactory:
         sql_wrapping_type = config.sql_wrapping_type.lower()
 
         if sql_wrapping_type == "mybatis":
-            if config.app_key == 'digital_channel':
+            if config.app_key and config.app_key.startswith('digital_channel') :
                 from .sql_extractors.mybatis_digital_channel_sql_extractor import MyBatisDigitalChannelSQLExtractor
                 return MyBatisDigitalChannelSQLExtractor(
                     config=config,
