@@ -171,8 +171,12 @@ List each required modification using the structured format below. Ensure the `c
       UPDATE TB_EMPLOYEE
       SET EMAIL = #{email}
       WHERE NAME = #{name, typeHandler=KsignIDNamValTypeHandler}
-  </update>
+  </update> 
   ```
+  
+## Tips
+- Do not include comments in code examples.
+- In `<resultMap>` examples, format each `<result>` tag on a **SINGLE LINE**, regardless of its length.
 
 ---
 
