@@ -830,6 +830,82 @@ class ThreeStepCCSCodeGenerator(ThreeStepCodeGenerator):
         template_str = self._load_template(self.planning_template_ccs_path)
         return self._render_template(template_str, variables)
 
+    # ========== Phase 3 헬퍼: Instruction 포맷 변환 ==========
+
+    def _format_instructions_for_execution(
+        self,
+        instructions: List[Dict[str, Any]],
+    ) -> str:
+        """
+        Phase 2의 modification_instructions를 Phase 3용 가독성 좋은 마크다운 형태로 변환합니다.
+
+        JSON 구조를 마크다운으로 변환하여 LLM이 쉽게 이해하고 따를 수 있도록 합니다.
+        특히 code_pattern_hint는 실제 Java 코드 블록으로 표시합니다.
+
+        Args:
+            instructions: Phase 2에서 생성된 modification_instructions 리스트
+
+        Returns:
+            str: 마크다운 형태로 변환된 수정 지침
+        """
+        if not instructions:
+            return "No modification instructions provided."
+
+        output_parts = []
+        output_parts.append("## Modification Instructions\n")
+        output_parts.append(f"**Total: {len(instructions)} modification(s)**\n")
+
+        for idx, inst in enumerate(instructions, 1):
+            action = inst.get("action", "UNKNOWN")
+            file_name = inst.get("file_name", "Unknown")
+            target_method = inst.get("target_method", "Unknown")
+
+            output_parts.append(f"### Modification {idx}: {action}")
+            output_parts.append("")
+
+            # 기본 정보 테이블
+            output_parts.append("| Field | Value |")
+            output_parts.append("|-------|-------|")
+
+            if action == "SKIP":
+                # SKIP 액션: file_name/target_method가 비어있을 수 있음
+                reason = inst.get("reason", "No reason provided")
+                output_parts.append(f"| Action | **{action}** |")
+                output_parts.append(f"| Reason | {reason} |")
+                output_parts.append("")
+                output_parts.append("**→ No code modification needed.**")
+                output_parts.append("")
+            else:
+                target_properties = inst.get("target_properties", [])
+                insertion_point = inst.get("insertion_point", "Not specified")
+                code_pattern_hint = inst.get("code_pattern_hint", "")
+                reason = inst.get("reason", "")
+
+                output_parts.append(f"| File | `{file_name}` |")
+                output_parts.append(f"| Method | `{target_method}` |")
+                output_parts.append(f"| Action | **{action}** |")
+                props_str = ", ".join(target_properties) if target_properties else "None"
+                output_parts.append(f"| Target Properties | `{props_str}` |")
+                output_parts.append(f"| Insertion Point | {insertion_point} |")
+                if reason:
+                    output_parts.append(f"| Reason | {reason} |")
+                output_parts.append("")
+
+                # 코드 패턴 힌트 출력 (Java 코드 블록으로)
+                if code_pattern_hint:
+                    output_parts.append("**Code to Insert:**")
+                    output_parts.append("")
+                    output_parts.append("```java")
+                    output_parts.append(code_pattern_hint)
+                    output_parts.append("```")
+
+                output_parts.append("")
+
+            output_parts.append("---")
+            output_parts.append("")
+
+        return "\n".join(output_parts)
+
     # ========== Phase 3 오버라이드: CCS 전용 Execution ==========
 
     def _create_execution_prompt(
@@ -852,19 +928,41 @@ class ThreeStepCCSCodeGenerator(ThreeStepCodeGenerator):
         """
         add_line_num = self.config and self.config.generate_type != "full_source"
 
-        # 소스 파일 내용 (인덱스 형식)
+        # modification_instructions에서 SKIP이 아닌 파일들만 추출
+        target_file_names = {
+            inst.get("file_name")
+            for inst in modification_instructions
+            if inst.get("action") != "SKIP" and inst.get("file_name")
+        }
+
+        # 전체 파일 경로에서 대상 파일만 필터링
+        if target_file_names:
+            filtered_file_paths = [
+                fp for fp in modification_context.file_paths
+                if Path(fp).name in target_file_names
+            ]
+        else:
+            # 모든 instruction이 SKIP인 경우 빈 리스트
+            filtered_file_paths = []
+
+        logger.info(
+            f"Phase 3 소스 파일 필터링: "
+            f"{len(modification_context.file_paths)}개 → {len(filtered_file_paths)}개"
+        )
+
+        # 필터링된 파일만 읽기
         source_files_str, index_to_path, path_to_content = (
             self._read_file_contents_indexed(
-                modification_context.file_paths, add_line_num=add_line_num
+                filtered_file_paths, add_line_num=add_line_num
             )
         )
 
-        # 파일명 -> 파일 경로 매핑 생성
-        file_mapping = {Path(fp).name: fp for fp in modification_context.file_paths}
+        # 파일명 -> 파일 경로 매핑 생성 (필터링된 파일만)
+        file_mapping = {Path(fp).name: fp for fp in filtered_file_paths}
 
-        # 수정 지침을 JSON 문자열로 변환
-        instructions_str = json.dumps(
-            modification_instructions, indent=2, ensure_ascii=False
+        # 수정 지침을 마크다운 형태로 변환 (LLM 가독성 향상)
+        instructions_str = self._format_instructions_for_execution(
+            modification_instructions
         )
 
         # CCS 유틸리티 클래스명 및 import 경로 결정 (Jinja2 치환용)
@@ -912,3 +1010,41 @@ class ThreeStepCCSCodeGenerator(ThreeStepCodeGenerator):
         prompt = self._render_template(template_str, variables)
 
         return prompt, index_to_path, file_mapping, path_to_content
+
+    def _execute_execution_phase(
+        self,
+        session_dir: Path,
+        modification_context: ModificationContext,
+        modification_instructions: List[Dict[str, Any]],
+    ) -> Tuple[List[Dict[str, Any]], int]:
+        """
+        Execution phase를 실행합니다. (CCS 전용 오버라이드)
+
+        모든 instruction이 SKIP인 경우 LLM 호출을 건너뛰고 빈 결과를 반환합니다.
+
+        Args:
+            session_dir: 세션 디렉토리 경로
+            modification_context: 수정 컨텍스트
+            modification_instructions: 수정 지침 리스트
+
+        Returns:
+            Tuple[List[Dict[str, Any]], int]: (파싱된 수정 정보 리스트, 사용된 토큰 수)
+        """
+        # 모든 instruction이 SKIP인지 확인
+        all_skip = all(
+            inst.get("action") == "SKIP"
+            for inst in modification_instructions
+        )
+
+        if all_skip:
+            logger.info("-" * 40)
+            logger.info("[Execution Phase] 모든 instruction이 SKIP - LLM 호출 건너뜀")
+            logger.info(f"SKIP된 instruction 수: {len(modification_instructions)}개")
+
+            # 빈 결과 반환 (토큰 사용 0)
+            return [], 0
+
+        # SKIP이 아닌 instruction이 있으면 부모 클래스 메서드 호출
+        return super()._execute_execution_phase(
+            session_dir, modification_context, modification_instructions
+        )

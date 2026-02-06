@@ -196,13 +196,15 @@ outSVOs = (List<{VOType}>) {{ common_util }}.setListDecryptAndMask(outSVOs, targ
 
 **CRITICAL: You MUST execute ALL instructions below. Missing any instruction is a FAILURE.**
 
-Each instruction specifies:
-- `query_id`: The query/method to modify
-- `action`: ENCRYPT, DECRYPT, DECRYPT_LIST, or SKIP
-- `insertion_point`: Exact location to insert code
-- `code_pattern_hint`: The encryption/decryption code to add
+Each modification section includes:
+- **File/Method**: Target file and method to modify
+- **Action**: ENCRYPT, DECRYPT, DECRYPT_LIST, ENCRYPT_THEN_DECRYPT, or SKIP
+- **Insertion Point**: Exact location to insert code
+- **Code to Insert**: Ready-to-use Java code block (copy exactly)
 
-**Verify each instruction is applied before outputting code.**
+**For SKIP actions**: No code modification needed - no output required for SKIP files.
+
+**Verify EACH non-SKIP modification is applied before outputting code.**
 
 {{ modification_instructions }}
 

@@ -188,19 +188,92 @@ outSVOs = (List<{VOType}>) {{ common_util }}.setListDecryptAndMask(outSVOs, targ
 
 ### When to Use Each Pattern
 
-| Scenario                           | Pattern                           | Action         | Note                           |
-| ---------------------------------- | --------------------------------- | -------------- | ------------------------------ |
-| Single VO encryption               | Single-Record Encryption          | `ENCRYPT`      | 단건 VO 암호화                 |
-| Single VO decryption               | Single-Record Decryption          | `DECRYPT`      | 단건 VO 복호화                 |
-| List<VO> decryption (with masking) | setListDecryptAndMask + mask loop | `DECRYPT_LIST` | 배치 복호화 + 마스킹           |
-| List<VO> decryption (no masking)   | setListDecryptAndMask(..., false) | `DECRYPT_LIST` | 배치 복호화, 마스킹 없음       |
-| Existing for-loop iterating List   | Single-Record inside loop         | `DECRYPT`      | 기존 loop 활용, 단건 패턴 적용 |
+| Scenario                                                  | Pattern                              | Action         | Priority | Note                                 |
+| --------------------------------------------------------- | ------------------------------------ | -------------- | -------- | ------------------------------------ |
+| Single VO encryption                                      | Single-Record Encryption             | `ENCRYPT`      | -        | Single VO encryption                 |
+| Single VO decryption                                      | Single-Record Decryption             | `DECRYPT`      | -        | Single VO decryption                 |
+| **★ Existing for-loop decrypting other sensitive fields** | **Single-Record inside existing loop** | **`DECRYPT`** | **1st**  | **Reuse existing loop (HIGHEST)**    |
+| List<VO> decryption (with masking)                        | setListDecryptAndMask + mask loop    | `DECRYPT_LIST` | 2nd      | Batch decrypt + masking              |
+| List<VO> decryption (no masking)                          | setListDecryptAndMask(..., false)    | `DECRYPT_LIST` | 2nd      | Batch decrypt, no masking            |
 
-**Decision rule for List decryption:**
+**★★★ Decision rule for List decryption (MUST follow this priority) ★★★:**
 
-- If code already has a for-loop iterating the list → use Single-Record pattern inside the loop
-- If no existing for-loop → use Multi-Record pattern (setListDecryptAndMask + masking loop)
-- If no masking needed → use Multi-Record pattern with third parameter `false`
+1. **FIRST (HIGHEST PRIORITY)**: Check if existing code already has a for-loop that:
+   - **Iterates over the SAME VO that contains the NAME field** (this is critical!)
+   - Decrypts OTHER sensitive data (RRN/jumin, phone, email, etc.) in that VO
+   - If YES → Add NAME decryption inside the existing for-loop → `action: "DECRYPT"`
+   - This maintains code consistency and avoids duplicate loops
+2. **SECOND**: If no existing decrypt for-loop for the SAME VO exists → Use Multi-Record pattern
+   - If masking needed → `setListDecryptAndMask` + mask loop → `action: "DECRYPT_LIST"`
+   - If no masking → `setListDecryptAndMask(..., false)` → `action: "DECRYPT_LIST"`
+
+**⚠️ IMPORTANT: The for-loop MUST iterate over the SAME VO type that contains the NAME field!**
+- ✅ Correct: `for (EmployeeVO vo : employeeList)` where `EmployeeVO` has `empNm` field
+- ❌ Wrong: Using a for-loop that iterates over a DIFFERENT VO type
+
+### ★★★ CRITICAL: Existing For-Loop Detection Guidelines ★★★
+
+**IMPORTANT: Before deciding on DECRYPT_LIST action, you MUST first check if an existing for-loop exists!**
+
+When you need to decrypt a `List<VO>`, analyze the source code to determine if there is **already a for-loop that iterates over the SAME VO containing the NAME field AND decrypts other sensitive data (RRN/jumin, phone, email, etc.)** using single-record pattern.
+
+**⚠️ KEY CONDITION: The for-loop MUST iterate over the SAME VO type that contains the NAME field!**
+
+**Detection Rules:**
+
+| Existing Code Pattern                                                              | Detection Signal                              | Recommended Action                       |
+| ---------------------------------------------------------------------------------- | --------------------------------------------- | ---------------------------------------- |
+| `for (EmployeeVO vo : empList) { decrypt(juminNo)... }` where EmployeeVO has empNm | Loop iterates SAME VO + decrypts other fields | Add NAME decrypt inside loop → `DECRYPT` |
+| `for (int i = 0; i < list.size(); i++) { list.get(i).getJuminNo()... }`            | Same VO list + decrypts other fields          | Add NAME decrypt inside loop → `DECRYPT` |
+| For-loop iterates over a DIFFERENT VO type                                         | Different VO - not applicable                 | Use `setListDecryptAndMask` → `DECRYPT_LIST` |
+| No decrypt loop exists for the target VO                                           | No existing decrypt pattern                   | Use `setListDecryptAndMask` → `DECRYPT_LIST` |
+
+**Example - When existing for-loop EXISTS (iterating the SAME VO with NAME field):**
+
+```java
+// Existing code already has a for-loop decrypting RRN and phone number
+// NOTE: outSVOs is the SAME VO type that contains the NAME field (empNm)
+for (int i = 0; i < outSVOs.size(); i++) {
+    // Existing RRN decryption
+    String juminDecr = {{ common_util }}.getDefaultValue(
+        !StringUtil.isEmptyTrimmed(outSVOs.get(i).getJuminNo()),
+        SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.RRN, outSVOs.get(i).getJuminNo(), true),
+        SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.RRN, " ", true)
+    );
+    outSVOs.get(i).setJuminNo(juminDecr);
+
+    // Existing phone number decryption
+    String telDecr = {{ common_util }}.getDefaultValue(
+        !StringUtil.isEmptyTrimmed(outSVOs.get(i).getTelNo()),
+        SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.TEL_NO, outSVOs.get(i).getTelNo(), true),
+        SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.TEL_NO, " ", true)
+    );
+    outSVOs.get(i).setTelNo(telDecr);
+
+    // ★ ADD NAME decryption code HERE! (DO NOT create a new loop)
+}
+```
+
+→ For this case, use `action: "DECRYPT"` and set `insertion_point` to "Inside existing for-loop, after other decrypt operations".
+
+**Decision Flow:**
+
+```
+List<VO> decryption needed? (VO contains NAME field)
+    │
+    ▼
+Does existing code have a for-loop iterating over the SAME VO?
+    │
+    ├── YES: Does this for-loop decrypt OTHER sensitive data (jumin/tel/email) of the SAME VO?
+    │         │
+    │         ├── YES → action: "DECRYPT"
+    │         │         insertion_point: "Inside existing for-loop, after other decrypt code"
+    │         │
+    │         └── NO → For-loop is for business logic, not decryption
+    │                   → action: "DECRYPT_LIST"
+    │
+    └── NO (or for-loop iterates DIFFERENT VO) → action: "DECRYPT_LIST"
+```
 
 ---
 
@@ -348,7 +421,12 @@ The following DQM.java files show how XML queries are mapped to Java methods.
    - `INSERT/UPDATE` command with `input_mapping.crypto_fields` → **ENCRYPT** before DAO call
    - `SELECT` command with `output_mapping.crypto_fields` → **DECRYPT** after DAO returns
    - `SELECT` command with `input_mapping.crypto_fields` (WHERE clause) → **ENCRYPT** search param first
-4. All name fields use `SliEncryptionConstants.Policy.NAME`.
+4. **★ For List<VO> SELECT result decryption, ALWAYS analyze source code for existing for-loop:**
+   - Search method body for `for (int i = 0; ...)` or `for (VO vo : list)` patterns
+   - Check if the for-loop contains **decrypt code for OTHER sensitive data (RRN/jumin, phone, email, etc.)**
+   - If existing decrypt for-loop found → `action: "DECRYPT"` (add NAME decrypt inside existing loop)
+   - If no existing for-loop → `action: "DECRYPT_LIST"` (use setListDecryptAndMask)
+5. All name fields use `SliEncryptionConstants.Policy.NAME`.
 
 ### 2. Using Data Mapping (from mapping_info)
 
@@ -575,11 +653,11 @@ For `direction: "BIDIRECTIONAL"` (e.g., search with encrypted WHERE + decrypted 
 | ------------------- | ------------------------------------------------ | -------------------------------------------------------------------------------------------- |
 | `flow_id`           | Reference to data_flow_analysis.flows[].flow_id  | `FLOW_001`, `FLOW_002`                                                                       |
 | `sql_query_id`      | Matching query_id from mapping_info.queries[]    | `com.example.mapper.UserMapper.insertUser`                                                   |
-| `file_name`         | File name to modify                              | `UserService.java`, `EmpController.java`                                                     |
-| `target_method`     | Method name to modify                            | `saveUser`, `getUserList`                                                                    |
+| `file_name`         | File name to modify (**empty string `""` if action is SKIP**) | `UserService.java`, `EmpController.java`, or `""` for SKIP                                   |
+| `target_method`     | Method name to modify (**empty string `""` if action is SKIP**) | `saveUser`, `getUserList`, or `""` for SKIP                                                  |
 | `action`            | Action to perform                                | `ENCRYPT`, `DECRYPT`, `DECRYPT_LIST`, `ENCRYPT_THEN_DECRYPT`, `SKIP`                         |
 | `target_properties` | Properties to encrypt/decrypt (array of strings) | `["empNm", "custNm"]`                                                                        |
-| `insertion_point`   | Insertion location description                   | `right before dao.insert() call`, `right before return list;`                                |
+| `insertion_point`   | **Specific** code location with actual code references | `After 'EmployeeVO result = empDao.selectById(id);' and before 'return result;'`             |
 | `code_pattern_hint` | Code pattern example (must start with `// AI 암호화 적용`) | `// AI 암호화 적용\nString empNmEncr = ...` |
 
 ### ⚠️ CRITICAL: Every Flow MUST Have a modification_instruction Entry ⚠️
@@ -596,9 +674,22 @@ For `direction: "BIDIRECTIONAL"` (e.g., search with encrypted WHERE + decrypted 
 ### Important Notes
 
 1. **sql_query_id**: Copy the exact `query_id` from `mapping_info.queries[]` that corresponds to this flow. Match the DAO method in `call_stacks` with `query_id` in `mapping_info`. If no DB access (e.g., Session → HTTP_RESPONSE), use `null`.
-2. **When action is SKIP**: Specify in `reason` which flow (flow_id) this refers to and why no modification is needed
+2. **When action is SKIP**:
+   - Set `file_name` to empty string `""`
+   - Set `target_method` to empty string `""`
+   - Set `target_properties` to empty array `[]`
+   - Set `insertion_point` to empty string `""`
+   - Set `code_pattern_hint` to empty string `""`
+   - Specify in `reason` which flow (flow_id) this refers to and why no modification is needed
 3. **target_properties**: Array of `java_field` names (strings) from `crypto_fields`. Use the Java field name, not DB column name.
-4. **insertion_point**: Describe specifically so code can be inserted in the next step
+4. **insertion_point**: **MUST be highly specific** with actual code references from source files:
+   - **Format**: `After '<actual_code_line>' and before '<actual_code_line>'`
+   - **Quote actual code**: Include variable names, method calls, and statements from the source file
+   - **Bad example** ❌: `"Right after DAO return, before return statement"` (too vague)
+   - **Good example** ✅: `"After 'List<EmpBVO> bvoList = empDQM.selectEmpList(param);' and before 'return bvoList;'"`
+   - **Good example** ✅: `"After 'bvo.setTelNo(telDecr);' inside the existing for-loop, before 'SliVOUtil.copy(bvo, svo);'"`
+   - **For ENCRYPT_THEN_DECRYPT**: Specify both locations clearly with actual code
+     - Example: `"ENCRYPT: After 'String searchName = param.getSearchName();' and before 'List<EmpVO> results = empDao.selectByName(param);' | DECRYPT: After the DAO call and before 'return results;'"`
 5. **code_pattern_hint**:
    - For VO: Infer getter/setter from `java_field` (e.g., `java_field: "empNm"` → `vo.getEmpNm()`, `vo.setEmpNm(...)`)
    - For Map: Use `java_field` as key (e.g., `map.put("name", SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.NAME, (String)map.get("name")));`)
@@ -756,7 +847,7 @@ When `mapping_info` shows a name column in BOTH `input_mapping` AND `output_mapp
       "action": "ENCRYPT",
       "reason": "FLOW_001: INSERT command requires encryption before DB save",
       "target_properties": ["empNm"],
-      "insertion_point": "Right before employeeDao.insert(vo) call",
+      "insertion_point": "After 'vo.setDeptCode(param.getDeptCode());' and right before 'employeeDao.insert(vo);'",
       "code_pattern_hint": "// AI 암호화 적용\nString empNmEncr = \"\";\nempNmEncr = {{ common_util }}.getDefaultValue(\n    !StringUtil.isEmptyTrimmed(vo.getEmpNm()),\n    SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, vo.getEmpNm(), true),\n    SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, \" \", true)\n);\nvo.setEmpNm(empNmEncr);"
     },
     {
@@ -766,7 +857,7 @@ When `mapping_info` shows a name column in BOTH `input_mapping` AND `output_mapp
       "action": "DECRYPT",
       "reason": "FLOW_002: SELECT command requires decryption after DB retrieval",
       "target_properties": ["empNm"],
-      "insertion_point": "Right after DAO return, before return statement",
+      "insertion_point": "After 'EmployeeVO result = employeeDao.selectById(id);' and before 'return result;'",
       "code_pattern_hint": "// AI 암호화 적용\nString empNmDecr = \"\";\nempNmDecr = {{ common_util }}.getDefaultValue(\n    !StringUtil.isEmptyTrimmed(result.getEmpNm()),\n    SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.NAME, result.getEmpNm(), true),\n    SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.NAME, \" \", true)\n);\nresult.setEmpNm(empNmDecr);"
     }
   ]
@@ -851,8 +942,8 @@ resultMap.put("name", nameDecr);
   "modification_instructions": [
     {
       "flow_id": "FLOW_001",
-      "file_name": "EmpService.java",
-      "target_method": "getDeptByEmpId",
+      "file_name": "",
+      "target_method": "",
       "action": "SKIP",
       "reason": "FLOW_001: Phase 1 crypto_fields is empty - query does not involve name columns",
       "target_properties": [],
@@ -862,6 +953,97 @@ resultMap.put("name", nameDecr);
   ]
 }
 ```
+
+---
+
+### Example: List Decryption WITH Existing For-Loop (★ CRITICAL Pattern)
+
+**Scenario:**
+
+- SQL: `SELECT emp_id, emp_nm, jumin_no, tel_no FROM employee`
+- Method chain: `EmployeeController.list()` → `EmployeeService.getList()` → `EmployeeDao.selectList()`
+- **Key Point:** Source code ALREADY has a for-loop decrypting jumin_no and tel_no **in the SAME VO (EmployeeBVO) that contains emp_nm**
+
+**Existing source code in EmployeeService.java:**
+
+```java
+public List<EmployeeSVO> getList(EmployeeBVO param) {
+    List<EmployeeBVO> bvoList = employeeDao.selectList(param);
+    List<EmployeeSVO> svoList = new ArrayList<>();
+
+    for (int i = 0; i < bvoList.size(); i++) {
+        EmployeeBVO bvo = bvoList.get(i);
+        EmployeeSVO svo = new EmployeeSVO();
+
+        // Existing RRN decryption
+        String juminDecr = {{ common_util }}.getDefaultValue(
+            !StringUtil.isEmptyTrimmed(bvo.getJuminNo()),
+            SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.RRN, bvo.getJuminNo(), true),
+            SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.RRN, " ", true)
+        );
+        bvo.setJuminNo(juminDecr);
+
+        // Existing phone number decryption
+        String telDecr = {{ common_util }}.getDefaultValue(
+            !StringUtil.isEmptyTrimmed(bvo.getTelNo()),
+            SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.TEL_NO, bvo.getTelNo(), true),
+            SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.TEL_NO, " ", true)
+        );
+        bvo.setTelNo(telDecr);
+
+        SliVOUtil.copy(bvo, svo);
+        svoList.add(svo);
+    }
+    return svoList;
+}
+```
+
+**Analysis:** Existing for-loop ALREADY decrypts jumin_no and tel_no. Add NAME decrypt to the SAME loop!
+
+**Correct Output:**
+
+```json
+{
+  "data_flow_analysis": {
+    "overview": "Employee list retrieval. Existing code has for-loop decrypting jumin_no/tel_no. Name decryption should be added to the same loop.",
+    "flows": [
+      {
+        "flow_id": "FLOW_001",
+        "flow_name": "Employee List Retrieval",
+        "sql_query_id": "EmployeeMapper.selectList",
+        "direction": "DB_TO_OUTBOUND",
+        "data_source": { "type": "DB", "description": "SELECT from employee table" },
+        "data_sink": { "type": "HTTP_RESPONSE", "description": "Return employee list" },
+        "path": "EmployeeController → EmployeeService.getList() → EmployeeDao → DB",
+        "sensitive_columns": ["emp_nm"]
+      }
+    ]
+  },
+  "modification_instructions": [
+    {
+      "flow_id": "FLOW_001",
+      "file_name": "EmployeeService.java",
+      "target_method": "getList",
+      "action": "DECRYPT",
+      "reason": "FLOW_001: Existing for-loop already decrypts juminNo and telNo. Add NAME decrypt to the same loop for consistency.",
+      "target_properties": ["empNm"],
+      "insertion_point": "Inside existing for-loop, after telNo decryption and before SliVOUtil.copy(bvo, svo)",
+      "code_pattern_hint": "// AI 암호화 적용\nString empNmDecr = \"\";\nempNmDecr = {{ common_util }}.getDefaultValue(\n    !StringUtil.isEmptyTrimmed(bvo.getEmpNm()),\n    SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.NAME, bvo.getEmpNm(), true),\n    SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.NAME, \" \", true)\n);\nbvo.setEmpNm(empNmDecr);"
+    }
+  ]
+}
+```
+
+**WRONG approach (DO NOT DO THIS):**
+
+```json
+{
+  "action": "DECRYPT_LIST",
+  "code_pattern_hint": "Map<String, String> targetEncr = new HashMap<>();\ntargetEncr.put(\"empNm\", SliEncryptionConstants.Policy.NAME);\nbvoList = {{ common_util }}.setListDecryptAndMask(bvoList, targetEncr);"
+}
+```
+
+This would create a DUPLICATE decrypt pattern and potentially cause issues with the existing for-loop logic.
 
 ---
 
@@ -937,7 +1119,7 @@ resultMap.put("name", nameDecr);
       "action": "ENCRYPT_THEN_DECRYPT",
       "reason": "FLOW_001: BIDIRECTIONAL - search param needs ENCRYPT, results need DECRYPT",
       "target_properties": ["empNm"],
-      "insertion_point": "ENCRYPT: Before employeeDao.selectByName() call; DECRYPT: After DAO return",
+      "insertion_point": "ENCRYPT: After 'Map<String, Object> searchParam = new HashMap<>();' and before 'List<Employee> resultList = employeeDao.selectByName(searchParam);' | DECRYPT: After the DAO call 'List<Employee> resultList = employeeDao.selectByName(searchParam);' and before 'return resultList;'",
       "code_pattern_hint": "// AI 암호화 적용\n// Before DAO call: encrypt search parameter\nString empNmEncr = \"\";\nempNmEncr = {{ common_util }}.getDefaultValue(\n    !StringUtil.isEmptyTrimmed((String)searchParam.get(\"empNm\")),\n    SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, (String)searchParam.get(\"empNm\"), true),\n    SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, \" \", true)\n);\nsearchParam.put(\"empNm\", empNmEncr);\nList<Employee> resultList = employeeDao.selectByName(searchParam);\n// After DAO call: decrypt results\nfor (Employee e : resultList) {\n    String empNmDecr = {{ common_util }}.getDefaultValue(\n        !StringUtil.isEmptyTrimmed(e.getEmpNm()),\n        SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.NAME, e.getEmpNm(), true),\n        SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.NAME, \" \", true)\n    );\n    e.setEmpNm(empNmDecr);\n}"
     }
   ]
