@@ -178,6 +178,11 @@ class TypehandlerContextGenerator(BaseContextGenerator):
                 if vo_file:
                     namespace_to_vos[namespace].add(vo_file)
 
+                    ancestor_vo_files = self.get_ancestor_vos(vo_file)
+                    namespace_to_vos[namespace].update(ancestor_vo_files)
+            
+
+
         # Process each XML file
         for xml_file in xml_files:
             try:
@@ -227,3 +232,70 @@ class TypehandlerContextGenerator(BaseContextGenerator):
                 continue
 
         return all_batches
+
+    def _load_inherit_graph(self) -> Dict:
+        """
+        Loads inherit_graph.json from the persistence directory.
+        """
+        try:
+            target_project = Path(self._config.target_project)
+            # Default path used by DataPersistenceManager
+            graph_path = target_project / ".applycrypto" / "results" / "inherit_graph.json"
+            
+            if not graph_path.exists():
+                logger.debug(f"inherit_graph.json not found at {graph_path}")
+                return {}
+                
+            with open(graph_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            logger.warning(f"Failed to load inherit_graph.json: {e}")
+            return {}
+
+    def get_ancestor_vos(self, vo_file: str) -> Set[str]:
+        """
+        Retrieves ancestor VO file paths using inherit_graph.json.
+
+        Args:
+            vo_file: Path to the VO file.
+
+        Returns:
+            Set[str]: Set of ancestor VO file paths.
+        """
+        inherit_map = self._load_inherit_graph()
+        if not inherit_map:
+            return set()
+            
+        # Extract simple class name from file path
+        file_name = Path(vo_file).stem
+        
+        ancestors = set()
+        current_class_name = file_name
+        
+        visited = set()
+        
+        while current_class_name:
+             if current_class_name in visited:
+                 break
+             visited.add(current_class_name)
+             
+             node = inherit_map.get(current_class_name)
+             if not node:
+                 break
+                 
+             superclass = node.get("superclass")
+             if not superclass or superclass == "Object":
+                 break
+                 
+             # Check if superclass exists in map
+             super_node = inherit_map.get(superclass)
+             if super_node:
+                 file_path = super_node.get("file_path")
+                 if file_path:
+                     ancestors.add(file_path)
+                 current_class_name = superclass
+             else:
+                 break
+                 
+        return ancestors
+        

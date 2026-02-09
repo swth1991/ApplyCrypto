@@ -26,6 +26,7 @@ except ImportError:
 from parser.call_graph_builder import CallGraphBuilder
 from parser.java_ast_parser import JavaASTParser
 from parser.xml_mapper_parser import XMLMapperParser
+from parser.inherit_graph_builder import InheritGraphBuilder
 
 from analyzer.db_access_analyzer import DBAccessAnalyzer
 from collector.source_file_collector import SourceFileCollector
@@ -531,6 +532,23 @@ class CLIController:
             )
 
             # Call Graph 저장 (endpoint별 call tree 포함)
+            
+            # Inherit Map 생성 및 저장
+            inherit_graph_builder = InheritGraphBuilder(
+                file_to_classes_map=call_graph_builder.file_to_classes_map,
+                class_name_to_info=call_graph_builder.class_name_to_info
+            )
+            inheritance_map = inherit_graph_builder.get_inheritance_map()
+            
+            persistence_manager.save_to_file(
+                # json 저장을 위해 dict 형태로 변환 (InheritNode는 Pydantic model이므로 model_dump 또는 dict 사용)
+                # 하지만 persistence_manager.save_to_file은 보통 객체의 to_dict()나 dict를 기대하거나, 
+                # 또는 Pydantic 모델 리스트/딕셔너리를 처리해 줄 수 있음.
+                # InheritNode는 dict()로 변환해서 저장하는 것이 안전함.
+                {k: v.dict() for k, v in inheritance_map.items()},
+                "inherit_graph.json"
+            )
+
             call_graph_data = {
                 "endpoints": [
                     ep.to_dict() if hasattr(ep, "to_dict") else str(ep)
