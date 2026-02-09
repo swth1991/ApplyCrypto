@@ -46,6 +46,12 @@ class EndpointExtractionStrategyFactory:
                 return DigitalChannelBatchEndpointExtractor(
                     java_parser=java_parser, cache_manager=cache_manager
                 )
+            elif config.app_key == "direct":
+                from .direct_endpoint_extraction import DirectEndpointExtraction
+
+                return DirectEndpointExtraction(
+                    java_parser=java_parser, cache_manager=cache_manager
+                )
             else:
                 from .spring_mvc_endpoint_extraction import SpringMVCEndpointExtraction
 
