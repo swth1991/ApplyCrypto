@@ -146,10 +146,9 @@ class JavaASTParser:
             else:
                 file_path = Path(file_path)
 
-            # 캐시 확인
-            cached_ast = self.cache_manager.get_cached_result(file_path)
-            if cached_ast:
-                return cached_ast, None
+            # cached_ast = self.cache_manager.get_cached_result(file_path)
+            # if cached_ast:
+            #     return cached_ast, None
 
             # 파일 읽기 (여러 인코딩 시도)
             source_code = None
@@ -179,15 +178,50 @@ class JavaASTParser:
             # 파싱
             tree = self.parser.parse(bytes(source_code, "utf8"))
 
-            # 캐시 저장
-            self.cache_manager.set_cached_result(file_path, tree)
-
             return tree, None
 
         except FileNotFoundError:
             return None, f"파일을 찾을 수 없습니다: {file_path}"
         except Exception as e:
             return None, f"파싱 중 오류 발생: {str(e)}"
+
+    def get_classes(self, file_path: Path) -> Tuple[List[ClassInfo], Optional[str]]:
+        """
+        Java 파일에서 클래스 정보를 추출 (캐싱 지원)
+
+        Args:
+            file_path: Java 파일 경로 (Path 객체 또는 문자열)
+
+        Returns:
+            Tuple[List[ClassInfo], Optional[str]]: (클래스 정보 목록, 에러 메시지)
+        """
+        # Path 객체로 변환
+        if hasattr(file_path, "path"):
+            file_path = Path(file_path.path)
+        else:
+            file_path = Path(file_path)
+
+        # 1. 캐시된 클래스 정보 확인 (접미사 제거 -> 기본 캐시 키 사용)
+        cached_classes = self.cache_manager.get_cached_result(file_path, namespace="ast_parser")
+        if cached_classes is not None:
+            return cached_classes, None
+
+        # 2. 캐시 없으면 파싱 수행
+        tree, error = self.parse_file(file_path)
+        if error:
+            return [], error
+        
+        if not tree:
+            return [], "파싱된 트리가 없습니다."
+
+        # 3. 클래스 정보 추출
+        classes = self.extract_class_info(tree, file_path)
+
+        # 4. 결과 캐싱 (접미사 제거 -> 기본 캐시 키 사용)
+        # ClassInfo 객체들은 pickle 가능하므로 디스크에 저장됨
+        self.cache_manager.set_cached_result(file_path, classes, namespace="ast_parser")
+
+        return classes, None
 
     def extract_class_info(self, tree: Tree, file_path: Path) -> List[ClassInfo]:
         """

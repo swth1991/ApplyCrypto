@@ -118,12 +118,13 @@ class CallGraphBuilder:
         # 모든 Java 파일 파싱
         all_classes: List[ClassInfo] = []
         for file_path in java_files:
-            tree, error = self.java_parser.parse_file(file_path)
+            classes, error = self.java_parser.get_classes(file_path)
             if error:
                 self.logger.warning(f"파일 파싱 실패: {file_path} - {error}")
                 continue
 
-            classes = self.java_parser.extract_class_info(tree, file_path)
+            # classes는 get_classes에서 이미 추출된 리스트
+            
             all_classes.extend(classes)
 
             # 파일 경로 -> 클래스 정보 매핑 저장 (재사용용)
