@@ -24,13 +24,13 @@ class DigitalChannelParser:
             - methods (List[str] or None)
         """
         path_obj = Path(file_path)
-        tree, error = self.parser.parse_file(path_obj)
-        
-        if not tree:
-            # Parsing failed
-            return None, None, None
 
-        class_infos = self.parser.extract_class_info(tree, path_obj)
+        class_infos, error = self.parser.get_classes(path_obj)
+        
+        if error:
+            # Parsing failed or empty
+            return None, None, None
+            
         if not class_infos:
             return None, None, None
         
