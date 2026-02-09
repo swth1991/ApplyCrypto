@@ -65,7 +65,7 @@ You must output a block for **EVERY** file listed in the input, using the exact 
 <mapper namespace="com.example.Mapper">
     <!-- Existing comment kept -->
     <resultMap id="newMap" type="User">
-        <result column="NAME" property="name" typeHandler="EncHandler"/>
+        <result column="NAME" property="name" typeHandler="com.samsunglife.drt.cms.config.mybatis.type.KsignIDNamValTypeHandler"/>
     </resultMap>
     
     <select id="select1" resultMap="newMap">

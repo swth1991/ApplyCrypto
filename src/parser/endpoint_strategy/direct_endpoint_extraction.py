@@ -3,9 +3,9 @@ from typing import List, Optional
 from models.endpoint import Endpoint
 from models.method import Method
 from parser.java_ast_parser import ClassInfo
-from .spring_mvc_endpoint_extraction import SpringMvcEndpointExtraction
+from .spring_mvc_endpoint_extraction import SpringMVCEndpointExtraction
 
-class DirectEndpointExtraction(SpringMvcEndpointExtraction):
+class DirectEndpointExtraction(SpringMVCEndpointExtraction):
     LAYER_PATTERNS = {
         "Controller": ["Controller", "RestController", "WebController", "Tasklet", "Resource"],
         "Service": ["Service", "ServiceImpl", "Biz"],

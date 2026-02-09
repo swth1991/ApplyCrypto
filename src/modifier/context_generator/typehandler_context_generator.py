@@ -1,8 +1,10 @@
 import logging
 import os
+import json
 from pathlib import Path
 from typing import List, Dict, Optional, Set, Tuple
 from models.table_access_info import TableAccessInfo
+from models.inherit_node import InheritNode
 
 import re
 from modifier.context_generator.base_context_generator import BaseContextGenerator
@@ -178,8 +180,8 @@ class TypehandlerContextGenerator(BaseContextGenerator):
                 if vo_file:
                     namespace_to_vos[namespace].add(vo_file)
 
-                    ancestor_vo_files = self.get_ancestor_vos(vo_file)
-                    namespace_to_vos[namespace].update(ancestor_vo_files)
+                    ancestor_vo_nodes = self.get_ancestor_vos(vo_file)
+                    namespace_to_vos[namespace].update(node.file_path for node in ancestor_vo_nodes)
             
 
 
@@ -197,10 +199,10 @@ class TypehandlerContextGenerator(BaseContextGenerator):
                 namespace = match.group(1)
                 
                 relevant_vo_paths = namespace_to_vos.get(namespace, set())
-                
+
                 # Find Mapper Interface
                 mapper_interface_file = self._match_class_to_file_path(namespace, repository_files)
-                
+
                 # Select VOs by token budget
                 context_vo_files = self._select_vo_files_by_token_budget(
                     vo_files=list(relevant_vo_paths),
@@ -252,7 +254,7 @@ class TypehandlerContextGenerator(BaseContextGenerator):
             logger.warning(f"Failed to load inherit_graph.json: {e}")
             return {}
 
-    def get_ancestor_vos(self, vo_file: str) -> Set[str]:
+    def get_ancestor_vos(self, vo_file: str) -> List[InheritNode]:
         """
         Retrieves ancestor VO file paths using inherit_graph.json.
 
@@ -260,42 +262,41 @@ class TypehandlerContextGenerator(BaseContextGenerator):
             vo_file: Path to the VO file.
 
         Returns:
-            Set[str]: Set of ancestor VO file paths.
+            List[InheritNode]: List of ancestor InheritNode objects.
         """
         inherit_map = self._load_inherit_graph()
         if not inherit_map:
-            return set()
-            
+            return []
+
         # Extract simple class name from file path
         file_name = Path(vo_file).stem
-        
-        ancestors = set()
+
+        ancestors: List[InheritNode] = []
         current_class_name = file_name
-        
+
         visited = set()
-        
+
         while current_class_name:
-             if current_class_name in visited:
-                 break
-             visited.add(current_class_name)
-             
-             node = inherit_map.get(current_class_name)
-             if not node:
-                 break
-                 
-             superclass = node.get("superclass")
-             if not superclass or superclass == "Object":
-                 break
-                 
-             # Check if superclass exists in map
-             super_node = inherit_map.get(superclass)
-             if super_node:
-                 file_path = super_node.get("file_path")
-                 if file_path:
-                     ancestors.add(file_path)
-                 current_class_name = superclass
-             else:
-                 break
-                 
+            if current_class_name in visited:
+                break
+            visited.add(current_class_name)
+
+            node_dict = inherit_map.get(current_class_name)
+            if not node_dict:
+                break
+
+            superclass = node_dict.get("superclass")
+            if not superclass or superclass == "Object":
+                break
+
+            # Check if superclass exists in map
+            super_node_dict = inherit_map.get(superclass)
+            if super_node_dict:
+                ancestor_node = InheritNode(**super_node_dict)
+                ancestors.append(ancestor_node)
+                current_class_name = superclass
+            else:
+                break
+
         return ancestors
         
