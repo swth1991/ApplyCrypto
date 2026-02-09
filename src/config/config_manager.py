@@ -126,10 +126,13 @@ class Configuration(BaseModel):
         "AnyframeBatSarangOn",
         "AnyframeBatEtc",
         "anyframe_ccs_batch",
+        "BatBanka",
     ] = Field(
         "SpringMVC", description="프레임워크 타입"
     )
-    sql_wrapping_type: Literal["mybatis", "mybatis_ccs", "mybatis_ccs_batch", "jdbc", "jpa"] = Field(
+    sql_wrapping_type: Literal[
+        "mybatis", "mybatis_ccs", "ccs_batch", "bnk_batch", "jdbc", "jpa"
+    ] = Field(
         ..., description="SQL Wrapping 타입"
     )
     access_tables: List[AccessTable] = Field(

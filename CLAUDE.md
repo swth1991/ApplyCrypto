@@ -79,7 +79,7 @@ CLI Layer → Configuration → Collection → Parsing → Analysis → Modifica
 - `LLMProvider`: LLM 프로바이더 추상화 (`src/modifier/llm/`)
 - `EndpointExtractionStrategy`: 프레임워크별 엔드포인트 추출 (`src/parser/endpoint_strategy/`)
 - `SQLExtractor`: SQL 래핑 타입별 추출 전략 (`src/analyzer/sql_extractors/`)
-  - `MyBatisSQLExtractor`, `MyBatisCCSSQLExtractor`, `MyBatisCCSBatchSQLExtractor`
+  - `MyBatisSQLExtractor`, `MyBatisCCSSQLExtractor`, `CCSBatchSQLExtractor`, `BNKBatchSQLExtractor`
   - `JdbcSQLExtractor`, `JpaSQLExtractor`
   - `AnyframeJdbcSQLExtractor`, `AnyframeJdbcBatSQLExtractor`
 - `BaseCodeGenerator`: 코드 생성 전략 (`src/modifier/code_generator/`)
@@ -97,7 +97,7 @@ The `config.json` file drives the entire workflow. Key fields:
 | Field | Description |
 |-------|-------------|
 | `framework_type` | `SpringMVC`, `AnyframeSarangOn`, `AnyframeCCS`, `anyframe_ccs_batch` 등 |
-| `sql_wrapping_type` | `mybatis`, `mybatis_ccs`, `mybatis_ccs_batch`, `jdbc`, `jpa` |
+| `sql_wrapping_type` | `mybatis`, `mybatis_ccs`, `ccs_batch`, `bnk_batch`, `jdbc`, `jpa` |
 | `modification_type` | `ControllerOrService`, `ServiceImplOrBiz`, `TypeHandler`, `TwoStep`, `ThreeStep` |
 | `llm_provider` | `watsonx_ai`, `watsonx_ai_on_prem`, `claude_ai`, `openai`, `mock` |
 | `access_tables` | 암호화 대상 테이블/칼럼 목록 |

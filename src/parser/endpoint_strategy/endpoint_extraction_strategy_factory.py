@@ -81,6 +81,15 @@ class EndpointExtractionStrategyFactory:
                 f"framework_type '{framework_type}'는 아직 구현되지 않았습니다."
             )
 
+        elif framework_type == "BatBanka":
+            from .anyframe_bnk_batch_endpoint_extraction import (
+                AnyframeBNKBatchEndpointExtraction,
+            )
+
+            return AnyframeBNKBatchEndpointExtraction(
+                java_parser=java_parser, cache_manager=cache_manager
+            )
+
         elif framework_type == "anyframe_ccs_batch":
             from .anyframe_ccs_batch_endpoint_extraction import (
                 AnyframeCCSBatchEndpointExtraction,
@@ -95,6 +104,6 @@ class EndpointExtractionStrategyFactory:
                 f"지원하지 않는 framework_type: {framework_type}. "
                 f"가능한 값: SpringMVC, AnyframeSarangOn, AnyframeOld, AnyframeEtc, "
                 f"AnyframeCCS, SpringBatQrts, AnyframeBatSarangOn, AnyframeBatEtc, "
-                f"anyframe_ccs_batch"
+                f"anyframe_ccs_batch, BatBanka"
             )
 

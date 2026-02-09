@@ -181,7 +181,8 @@
   "_sql_wrapping_types": [
     "mybatis - Standard MyBatis XML mappers",
     "mybatis_ccs - CCS-specific MyBatis (ctl/svcimpl/dqm layers)",
-    "mybatis_ccs_batch - CCS Batch MyBatis (*BAT_SQL.xml)",
+    "ccs_batch - CCS Batch MyBatis (*BAT_SQL.xml)",
+    "bnk_batch - BNK Batch MyBatis (*_SQL.xml)",
     "jdbc - Plain JDBC with PreparedStatement",
     "jpa - JPA/Hibernate"
   ],

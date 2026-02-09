@@ -1,4 +1,4 @@
-# Encryption/Decryption Modification Planning (Phase 2) - CCS Batch Version
+# Encryption/Decryption Modification Planning (Phase 2) - BNK Batch Version
 
 ## Role
 
@@ -114,21 +114,13 @@ The following `mapping_info` was extracted in Phase 1 and contains all SQL query
 **Field Presence Rules:**
 - If `input_mapping.crypto_fields` is empty → NO encryption needed for input
 - If `output_mapping.crypto_fields` is empty → NO decryption needed for output
-- If BOTH are empty → `action: "SKIP"` with `target_method: ""` and `file_name: ""` (this query doesn't involve target columns)
+- If BOTH are empty → `action: "SKIP"` with `target_method: ""` and `file_name: ""`
 - **DO NOT invent or add fields** that weren't identified in Phase 1
 
-**mapping_info Structure for CCS Batch:**
+**mapping_info Structure for BNK Batch:**
 
 ```json
 {
-  "sql_vo_mappings": [
-    {
-      "sql_id": "sel04",
-      "vo_class": "XXXBatVO",
-      "operation": "SELECT",
-      "description": "Brief description"
-    }
-  ],
   "queries": [
     {
       "query_id": "sel04",
@@ -160,8 +152,7 @@ The following `mapping_info` was extracted in Phase 1 and contains all SQL query
 
 | Field | Description | How to Use |
 |-------|-------------|------------|
-| `sql_id` | SQL query ID from XML | Match with itemFactory.getItemReader/getItemWriter calls |
-| `vo_class` | VO class used with this query | Identify which VO variable to modify |
+| `query_id` | SQL query ID from XML | Match with itemFactory.getItemReader/getItemWriter calls |
 | `command_type` | SQL command type | `SELECT` → DECRYPT results, `INSERT/UPDATE` → ENCRYPT inputs |
 | `crypto_fields` | Array of fields needing encryption | Contains `column_name`, `java_field`, `getter/setter` |
 | `getter/setter` | VO methods | Use directly in code_pattern_hint |
@@ -173,21 +164,14 @@ The following `mapping_info` was extracted in Phase 1 and contains all SQL query
 
 {{ mapping_info }}
 
-### DQM Interface (★★★ XML Query → Java Method Mapping ★★★)
+{% if dqm_java_info %}
+### DQM Interface (XML Query → Java Method Mapping)
 
-The following DQM.java files show how XML queries are mapped to Java methods.
+The following files show how XML queries are mapped to Java methods.
 **Use this to understand which Java method calls which SQL query.**
 
-**Key Pattern in CCS Batch:**
-- XML query id: `namespace-methodName` (e.g., `com.example.dqm-selectUser`)
-- In BAT.java: `itemFactory.getItemReader("namespace-methodName", VO.class)` or similar
-
-**How to use:**
-1. Find the SQL id used in BAT.java (e.g., `itemFactory.getItemReader("com.example.dqm-selectUser", ...)`)
-2. Match that query id with `mapping_info.queries[].query_id`
-3. Use `mapping_info.crypto_fields` to determine encryption/decryption needs
-
 {{ dqm_java_info }}
+{% endif %}
 
 ### Source Files to Modify
 
@@ -329,6 +313,23 @@ vo.setCustNm(SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.NAME, vo
 }
 ```
 
+### ★★★ SKIP Action Output Format (CRITICAL) ★★★
+
+**When `action` is `"SKIP"`, you MUST set `target_method` and `file_name` to empty strings:**
+
+```json
+{
+  "flow_id": "FLOW_001",
+  "file_name": "",
+  "target_method": "",
+  "action": "SKIP",
+  "reason": "Reason for skipping",
+  "target_properties": [],
+  "insertion_point": "",
+  "code_pattern_hint": ""
+}
+```
+
 ### Batch-Specific Direction Values
 
 | Direction | Description | Action |
@@ -342,7 +343,7 @@ vo.setCustNm(SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.NAME, vo
 | Field               | Description                                              | Example                                                       |
 | ------------------- | -------------------------------------------------------- | ------------------------------------------------------------- |
 | `flow_id`           | Reference to data_flow_analysis.flows[].flow_id          | `FLOW_001`, `FLOW_002`                                        |
-| `sql_query_id`      | Matching sql_id from mapping_info.sql_vo_mappings[]      | `sel04`, `upd01`                                              |
+| `sql_query_id`      | Matching sql_id from mapping_info                        | `sel04`, `upd01`                                              |
 | `file_name`         | BAT.java file name to modify (**empty string for SKIP**) | `CmpgnCstmrRegBAT.java`                                       |
 | `target_method`     | Method name to modify (**empty string for SKIP**)        | `execute`, `process`                                          |
 | `action`            | Action to perform                                        | `ENCRYPT`, `DECRYPT`, `ENCRYPT_THEN_DECRYPT`, `SKIP`          |
@@ -515,7 +516,7 @@ vo.setCustNm(SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.NAME, vo
 Based on the information above:
 
 1. **Analyze the BAT.java source code** to find ItemReader/ItemWriter usage patterns
-2. **Match each sql_id** with entries in `mapping_info.sql_vo_mappings` and `mapping_info.queries`
+2. **Match each sql_id** with entries in `mapping_info.queries`
 3. **Check `crypto_fields`** - if empty → `action: "SKIP"` with `file_name: ""` and `target_method: ""`
 4. **Determine insertion points** based on read()/write() method calls
 5. **Generate code_pattern_hint** using getter/setter from mapping_info

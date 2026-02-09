@@ -1,18 +1,23 @@
 """
-Three-Step CCS Batch Code Generator
+Three-Step BNK Batch Code Generator
 
-CCS Batch 프로젝트 전용 ThreeStepBatchBaseCodeGenerator입니다.
+BNK Batch 프로젝트 전용 ThreeStepBatchBaseCodeGenerator입니다.
 
 특징:
 - Phase 1: BAT.java + BATVO + XML 전체를 분석하여 데이터 흐름 기반 필드 매핑
 - Phase 2: BAT.java + Phase 1 결과로 수정 지침 생성
 - Phase 3: BAT.java만 수정 (SKIP 파일 필터링, ALL SKIP 최적화)
 
+CCS Batch와의 차이점:
+- CCS prefix 유틸리티(BCCommUtil 등) 없음, SliEncryptionUtil 직접 사용
+- SQL XML 파일 패턴: *_SQL.xml (CCS Batch는 *BAT_SQL.xml)
+- BATVO 검색 범위: batvo/ 하위 + 같은 디렉토리 (CCS Batch는 batvo/ 하위만)
+
 상속 구조:
     BaseMultiStepCodeGenerator
         └── ThreeStepCodeGenerator (기본 3단계 생성기)
             └── ThreeStepBatchBaseCodeGenerator (배치 공통 부모)
-                └── ThreeStepCCSBatchCodeGenerator (CCS Batch 전용)
+                └── ThreeStepBNKBatchCodeGenerator (BNK Batch 전용)
 """
 
 import json
@@ -28,22 +33,20 @@ from .three_step_batch_base_code_generator import ThreeStepBatchBaseCodeGenerato
 logger = logging.getLogger("applycrypto")
 
 
-class ThreeStepCCSBatchCodeGenerator(ThreeStepBatchBaseCodeGenerator):
+class ThreeStepBNKBatchCodeGenerator(ThreeStepBatchBaseCodeGenerator):
     """
-    CCS Batch 전용 3단계 LLM 협업 Code 생성기
+    BNK Batch 전용 3단계 LLM 협업 Code 생성기
 
     Phase 1에서 BAT.java 코드의 데이터 흐름을 분석하여
     SQL ID ↔ VO 클래스 ↔ 필드 매핑을 추론합니다.
 
-    기존 CCS와의 차이점:
-    - DQM.xml의 resultMap 대신 BAT.java + BATVO + SQL 쿼리 분석
-    - itemFactory.getItemReader("sqlId", VO.class) 패턴 기반 매핑
-    - vo.getXxx() / vo.setXxx() 패턴에서 실제 사용 필드 식별
+    CCS Batch와 동일한 분석 흐름을 사용하지만,
+    CCS prefix 유틸리티 없이 SliEncryptionUtil을 직접 사용합니다.
     """
 
     def __init__(self, config):
         """
-        ThreeStepCCSBatchCodeGenerator 초기화
+        ThreeStepBNKBatchCodeGenerator 초기화
 
         Args:
             config: 설정 객체 (three_step_config 필수)
@@ -51,28 +54,28 @@ class ThreeStepCCSBatchCodeGenerator(ThreeStepBatchBaseCodeGenerator):
         super().__init__(config)
 
         logger.info(
-            "ThreeStepCCSBatchCodeGenerator 초기화 완료 "
+            "ThreeStepBNKBatchCodeGenerator 초기화 완료 "
             "(BAT.java 데이터 흐름 분석 기반 필드 매핑 사용)"
         )
 
     # ========== 추상 메서드 구현 ==========
 
     def _get_batch_template_paths(self, template_dir: Path) -> Dict[str, Path]:
-        """CCS Batch 전용 템플릿 경로를 반환합니다."""
+        """BNK Batch 전용 템플릿 경로를 반환합니다."""
         if self._is_name_only:
             logger.info(
-                "ThreeStepCCSBatchCodeGenerator: name_only 모드 활성화 (이름 필드만 처리)"
+                "ThreeStepBNKBatchCodeGenerator: name_only 모드 활성화 (이름 필드만 처리)"
             )
             return {
-                "data_mapping": template_dir / "data_mapping_template_ccs_batch_name_only.md",
-                "planning": template_dir / "planning_template_ccs_batch_name_only.md",
-                "execution": template_dir / "execution_template_ccs_batch_name_only.md",
+                "data_mapping": template_dir / "data_mapping_template_bnk_batch_name_only.md",
+                "planning": template_dir / "planning_template_bnk_batch_name_only.md",
+                "execution": template_dir / "execution_template_bnk_batch_name_only.md",
             }
         else:
             return {
-                "data_mapping": template_dir / "data_mapping_template_ccs_batch.md",
-                "planning": template_dir / "planning_template_ccs_batch.md",
-                "execution": template_dir / "execution_template_ccs_batch.md",
+                "data_mapping": template_dir / "data_mapping_template_bnk_batch.md",
+                "planning": template_dir / "planning_template_bnk_batch.md",
+                "execution": template_dir / "execution_template_bnk_batch.md",
             }
 
     def _create_batch_data_mapping_prompt(
@@ -80,8 +83,8 @@ class ThreeStepCCSBatchCodeGenerator(ThreeStepBatchBaseCodeGenerator):
         modification_context: ModificationContext,
         table_access_info: TableAccessInfo,
     ) -> str:
-        """CCS Batch Phase 1 프롬프트 위임"""
-        return self._create_ccs_batch_data_mapping_prompt(
+        """BNK Batch Phase 1 프롬프트 생성"""
+        return self._create_bnk_batch_data_mapping_prompt(
             modification_context, table_access_info
         )
 
@@ -91,20 +94,20 @@ class ThreeStepCCSBatchCodeGenerator(ThreeStepBatchBaseCodeGenerator):
         table_access_info: TableAccessInfo,
         mapping_info: Dict[str, Any],
     ) -> str:
-        """CCS Batch Phase 2 프롬프트 위임"""
-        return self._create_ccs_batch_planning_prompt(
+        """BNK Batch Phase 2 프롬프트 생성"""
+        return self._create_bnk_batch_planning_prompt(
             modification_context, table_access_info, mapping_info
         )
 
-    # ========== CCS Batch 전용 프롬프트 생성 ==========
+    # ========== BNK Batch 전용 프롬프트 생성 ==========
 
-    def _create_ccs_batch_data_mapping_prompt(
+    def _create_bnk_batch_data_mapping_prompt(
         self,
         modification_context: ModificationContext,
         table_access_info: TableAccessInfo,
     ) -> str:
         """
-        CCS Batch 전용 Phase 1 프롬프트 생성
+        BNK Batch 전용 Phase 1 프롬프트 생성
 
         템플릿 변수:
         - table_info: 암호화 대상 테이블/컬럼
@@ -144,21 +147,21 @@ class ThreeStepCCSBatchCodeGenerator(ThreeStepBatchBaseCodeGenerator):
         template_str = self._load_template(self._batch_data_mapping_template)
         return self._render_template(template_str, variables)
 
-    def _create_ccs_batch_planning_prompt(
+    def _create_bnk_batch_planning_prompt(
         self,
         modification_context: ModificationContext,
         table_access_info: TableAccessInfo,
         mapping_info: Dict[str, Any],
     ) -> str:
         """
-        CCS Batch 전용 Phase 2 프롬프트 생성
+        BNK Batch 전용 Phase 2 프롬프트 생성
 
         템플릿 변수:
         - table_info: 암호화 대상 테이블/컬럼
         - source_files: BAT.java 소스 코드 (줄번호 포함)
         - mapping_info: Phase 1 결과 (JSON)
 
-        Note: call_stacks는 포함하지 않음 (CCS Batch는 BAT가 최상위)
+        Note: call_stacks는 포함하지 않음 (BNK Batch는 BAT가 최상위)
         """
         table_info = {
             "table_name": modification_context.table_name,
@@ -177,7 +180,7 @@ class ThreeStepCCSBatchCodeGenerator(ThreeStepBatchBaseCodeGenerator):
             "table_info": table_info_str,
             "source_files": source_files_str,
             "mapping_info": mapping_info_str,
-            "dqm_java_info": "",  # CCS Batch는 BAT.java가 SQL id를 직접 참조하므로 DQM 불필요
+            "dqm_java_info": "",  # BNK Batch는 DQM 불필요
         }
 
         template_str = self._load_template(self._batch_planning_template)

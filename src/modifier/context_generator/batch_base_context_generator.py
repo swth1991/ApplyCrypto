@@ -1,7 +1,7 @@
 """
-MybatisCCS Batch Context Generator
+Batch Base Context Generator
 
-CCS 배치 프로그램용 Context Generator입니다.
+배치 프로그램용 공통 Context Generator 베이스 클래스입니다.
 BAT.java 파일을 수정 대상으로, BATVO.java 파일과 XXX_SQL.xml을 context로 포함합니다.
 
 특징:
@@ -10,6 +10,7 @@ BAT.java 파일을 수정 대상으로, BATVO.java 파일과 XXX_SQL.xml을 cont
     - 레이어: bat, batvo
     - BAT.java의 import문을 파싱하여 실제 사용하는 BATVO만 포함
     - BAT 파일명 기준으로 대응하는 XML 파일 자동 매칭
+    - 서브클래스: CCSBatchContextGenerator, BNKBatchContextGenerator
 """
 
 import logging
@@ -25,20 +26,18 @@ from .base_context_generator import BaseContextGenerator
 logger = logging.getLogger("applycrypto.context_generator")
 
 
-class MybatisCCSBatchContextGenerator(BaseContextGenerator):
+class BatchBaseContextGenerator(BaseContextGenerator):
     """
-    CCS 배치 프로그램용 Context Generator
+    배치 프로그램용 공통 Context Generator 베이스 클래스
 
     BAT.java 파일을 수정 대상으로 하고,
     BATVO.java 파일 (import 기반 필터링)과 XXX_SQL.xml을 참조용 context로 포함합니다.
 
-    ThreeStep 코드 생성을 위해:
-    - Phase 1: BAT.java + BATVO들 + XML을 모두 LLM에 전달하여 데이터 흐름 분석
-    - Phase 2: BAT.java + Phase 1 결과로 수정 지침 생성
-    - Phase 3: BAT.java만 수정
+    서브클래스에서 _collect_batvo_candidates()를 오버라이드하여
+    BATVO 수집 범위를 커스터마이즈할 수 있습니다.
     """
 
-    # CCS 배치 레이어명 매핑 (소문자로 통일)
+    # 배치 레이어명 매핑 (소문자로 통일)
     LAYER_NAME_MAPPING = {
         "bat": "bat",
         "batvo": "batvo",
@@ -46,7 +45,7 @@ class MybatisCCSBatchContextGenerator(BaseContextGenerator):
 
     def __init__(self, config: Configuration, code_generator):
         """
-        MybatisCCSBatchContextGenerator 초기화
+        BatchBaseContextGenerator 초기화
 
         Args:
             config: 설정 객체
@@ -77,7 +76,6 @@ class MybatisCCSBatchContextGenerator(BaseContextGenerator):
                 logger.warning(f"BAT 파일에서 클래스 정보를 추출할 수 없습니다: {bat_file_path}")
                 return set()
 
-            # public 클래스 또는 첫 번째 클래스의 imports 반환
             bat_class = next(
                 (c for c in classes if c.access_modifier == "public"), classes[0]
             )
@@ -110,12 +108,11 @@ class MybatisCCSBatchContextGenerator(BaseContextGenerator):
             logger.info("Import가 없어 모든 BATVO 파일을 포함합니다.")
             return all_batvo_files
 
-        # import에서 클래스명만 추출 (마지막 부분)
         import_class_names = {imp.split(".")[-1].lower() for imp in bat_imports}
 
         filtered = []
         for batvo_file in all_batvo_files:
-            batvo_name = Path(batvo_file).stem.lower()  # 확장자 제외
+            batvo_name = Path(batvo_file).stem.lower()
             if batvo_name in import_class_names:
                 filtered.append(batvo_file)
 
@@ -142,7 +139,7 @@ class MybatisCCSBatchContextGenerator(BaseContextGenerator):
             Optional[str]: XML 파일 경로, 없으면 None
         """
         bat_path = Path(bat_file_path)
-        bat_name = bat_path.stem  # 예: "XXXRegBAT"
+        bat_name = bat_path.stem
         xml_name = f"{bat_name}_SQL.xml"
 
         # 1. 같은 디렉토리에서 찾기
@@ -158,7 +155,6 @@ class MybatisCCSBatchContextGenerator(BaseContextGenerator):
             return str(parent_xml_path)
 
         # 3. bat/ 디렉토리 바깥에서 찾기 (xml/ 디렉토리가 별도로 있는 경우)
-        # 예: bat/XXXRegBAT.java -> xml/XXXRegBAT_SQL.xml
         if bat_path.parent.name == "bat":
             sibling_xml_dir = bat_path.parent.parent / "xml"
             if sibling_xml_dir.exists():
@@ -199,6 +195,24 @@ class MybatisCCSBatchContextGenerator(BaseContextGenerator):
         )
         return normalized
 
+    def _collect_batvo_candidates(
+        self, bat_file: str, batvo_files: List[str]
+    ) -> List[str]:
+        """
+        BATVO 후보 파일을 수집합니다.
+
+        기본 구현: layer_files에서 온 batvo_files를 그대로 반환합니다.
+        서브클래스에서 오버라이드하여 추가 소스(같은 디렉토리 등)에서 BATVO를 수집할 수 있습니다.
+
+        Args:
+            bat_file: BAT.java 파일 경로
+            batvo_files: layer_files에서 수집된 BATVO 파일 목록
+
+        Returns:
+            List[str]: BATVO 후보 파일 경로 목록
+        """
+        return list(batvo_files)
+
     def generate(
         self,
         layer_files: Dict[str, List[str]],
@@ -206,15 +220,16 @@ class MybatisCCSBatchContextGenerator(BaseContextGenerator):
         columns: List[Dict],
     ) -> List[ModificationContext]:
         """
-        CCS 배치용 context 생성
+        배치용 context 생성
 
         수정 대상 (file_paths): BAT.java
         참조용 context (context_files): BATVO.java (import 기반 필터링) + XXX_SQL.xml
 
         각 BAT 파일에 대해:
-        1. import 문을 파싱하여 실제 사용하는 BATVO만 필터링
-        2. BAT 파일명 기준으로 대응하는 XML 파일 찾기
-        3. context_files = filtered_batvo + xml_file
+        1. _collect_batvo_candidates()로 BATVO 후보 수집 (서브클래스 확장 가능)
+        2. import 문을 파싱하여 실제 사용하는 BATVO만 필터링
+        3. BAT 파일명 기준으로 대응하는 XML 파일 찾기
+        4. context_files = filtered_batvo + xml_file
 
         Args:
             layer_files: 레이어별 파일 경로 딕셔너리 (bat, batvo)
@@ -227,16 +242,13 @@ class MybatisCCSBatchContextGenerator(BaseContextGenerator):
         normalized = self._normalize_layer_files(layer_files)
 
         logger.info(
-            f"MybatisCCSBatchContextGenerator: 레이어 정규화 완료 "
+            f"{self.__class__.__name__}: 레이어 정규화 완료 "
             f"({list(layer_files.keys())} -> {list(normalized.keys())})"
         )
 
         all_batches: List[ModificationContext] = []
 
-        # BAT 파일 (수정 대상)
         bat_files = normalized.get("bat", [])
-
-        # BATVO 파일 (context용 - 필터링 전)
         batvo_files = normalized.get("batvo", [])
 
         if not bat_files:
@@ -244,25 +256,27 @@ class MybatisCCSBatchContextGenerator(BaseContextGenerator):
             return all_batches
 
         logger.info(
-            f"CCS 배치 context 생성 시작: "
+            f"{self.__class__.__name__} context 생성 시작: "
             f"{len(bat_files)}개 BAT 파일, "
             f"{len(batvo_files)}개 BATVO 후보"
         )
 
-        # 각 BAT 파일에 대해 batch 생성
         for bat_file in bat_files:
             bat_name = Path(bat_file).name
 
-            # 1. BAT 파일의 import 파싱
+            # 1. BATVO 후보 수집 (서브클래스에서 확장 가능)
+            all_batvo_candidates = self._collect_batvo_candidates(bat_file, batvo_files)
+
+            # 2. BAT 파일의 import 파싱
             bat_imports = self._extract_imports_from_bat(bat_file)
 
-            # 2. import 기반 BATVO 필터링
-            filtered_batvo = self._filter_batvo_by_imports(bat_imports, batvo_files)
+            # 3. import 기반 BATVO 필터링
+            filtered_batvo = self._filter_batvo_by_imports(bat_imports, all_batvo_candidates)
 
-            # 3. 대응 XML 파일 찾기
+            # 4. 대응 XML 파일 찾기
             xml_file = self._find_xml_file(bat_file)
 
-            # 4. context_files = filtered_batvo + xml_file
+            # 5. context_files = filtered_batvo + xml_file
             context_files = list(filtered_batvo)
             if xml_file:
                 context_files.append(xml_file)
@@ -274,7 +288,7 @@ class MybatisCCSBatchContextGenerator(BaseContextGenerator):
                 f"(총 context: {len(context_files)}개)"
             )
 
-            # 5. batch 생성
+            # 6. batch 생성
             batches = self.create_batches(
                 file_paths=[bat_file],
                 table_name=table_name,
@@ -284,5 +298,5 @@ class MybatisCCSBatchContextGenerator(BaseContextGenerator):
             )
             all_batches.extend(batches)
 
-        logger.info(f"CCS 배치 context 생성 완료: 총 {len(all_batches)}개 batch")
+        logger.info(f"{self.__class__.__name__} context 생성 완료: 총 {len(all_batches)}개 batch")
         return all_batches

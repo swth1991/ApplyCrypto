@@ -1,4 +1,4 @@
-# Encryption/Decryption Modification Planning (Phase 2) - CCS Batch Version (Name Only)
+# Encryption/Decryption Modification Planning (Phase 2) - BNK Batch Version (Name Only)
 
 ## Role
 
@@ -90,21 +90,14 @@ Columns with other types (dob, rrn, etc.) should be IGNORED.
 
 {{ mapping_info }}
 
-### DQM Interface (★★★ XML Query → Java Method Mapping ★★★)
+{% if dqm_java_info %}
+### DQM Interface (XML Query → Java Method Mapping)
 
-The following DQM.java files show how XML queries are mapped to Java methods.
+The following files show how XML queries are mapped to Java methods.
 **Use this to understand which Java method calls which SQL query.**
 
-**Key Pattern in CCS Batch:**
-- XML query id: `namespace-methodName` (e.g., `com.example.dqm-selectUser`)
-- In BAT.java: `itemFactory.getItemReader("namespace-methodName", VO.class)` or similar
-
-**How to use:**
-1. Find the SQL id used in BAT.java (e.g., `itemFactory.getItemReader("com.example.dqm-selectUser", ...)`)
-2. Match that query id with `mapping_info.queries[].query_id`
-3. Use `mapping_info.crypto_fields` to determine encryption/decryption needs
-
 {{ dqm_java_info }}
+{% endif %}
 
 ### Source Files to Modify
 
@@ -197,6 +190,23 @@ while (reader.next()) {
       "code_pattern_hint": "vo.setCustNm(SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.NAME, vo.getCustNm()));"
     }
   ]
+}
+```
+
+### ★★★ SKIP Action Output Format (CRITICAL) ★★★
+
+**When `action` is `"SKIP"`, you MUST set `target_method` and `file_name` to empty strings:**
+
+```json
+{
+  "flow_id": "FLOW_001",
+  "file_name": "",
+  "target_method": "",
+  "action": "SKIP",
+  "reason": "Reason for skipping",
+  "target_properties": [],
+  "insertion_point": "",
+  "code_pattern_hint": ""
 }
 ```
 
