@@ -130,7 +130,7 @@ class DynamicSQLResolver:
                 content = self._process_element(child, active_includes).strip()
                 if content:
                     # Regex to remove leading AND/OR (case insensitive)
-                    content_clean = re.sub(r'^(?i)(AND|OR)\s+', '', content)
+                    content_clean = re.sub(r'(?i)^(AND|OR)\s+', '', content)
                     parts.append(f" WHERE {content_clean} ")
 
             # --- <set> ---
@@ -172,11 +172,11 @@ class DynamicSQLResolver:
             tokens = [t.strip() for t in prefix_overrides.split('|')]
             for token in tokens:
                 # Remove token if it appears at the start
-                pattern = r'^(?i)' + re.escape(token) + r'\s+'
+                pattern = r'(?i)^' + re.escape(token) + r'\s+'
                 # Or just token? usually token + space if it's a word? MyBatis documentation is lenient.
                 # We'll simple-check startswith.
-                if re.match(r'^(?i)' + re.escape(token), content):
-                    content = re.sub(r'^(?i)' + re.escape(token), '', content, count=1).strip()
+                if re.match(r'(?i)^' + re.escape(token), content):
+                    content = re.sub(r'(?i)^' + re.escape(token), '', content, count=1).strip()
                     break # MyBatis removes one match
         
         # Handle suffixOverrides
