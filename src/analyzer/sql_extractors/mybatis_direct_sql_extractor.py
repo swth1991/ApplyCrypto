@@ -5,9 +5,7 @@ MyBatis XML Mapper 파일에서 SQL을 추출하는 구현 클래스입니다.
 """
 
 import logging
-import re
-from collections import defaultdict
-from typing import Any, Dict, List, Optional, Set, Tuple, override
+from typing import List, override
 
 from config.config_manager import Configuration
 from models.source_file import SourceFile
@@ -16,11 +14,9 @@ from models.sql_extraction_output import ExtractedSQLQuery
 from parser.xml_mapper_parser import XMLMapperParser
 from util.dynamic_sql_resolver import DynamicSQLResolver
 
-from .mybatis_sql_extractor import MyBatisSqlExtractor 
-from ..llm_sql_extractor.llm_sql_extractor import LLMSQLExtractor
-from ..sql_extractor import SQLExtractor
+from .mybatis_sql_extractor import MyBatisSQLExtractor 
 
-class MyBatisSQLExtractor(MyBatisSqlExtractor):
+class MyBatisDirectSQLExtractor(MyBatisSQLExtractor):
     """
     MyBatis Direct SQL Extractor 구현 클래스
 
