@@ -48,6 +48,14 @@ class SQLExtractorFactory:
                     java_parse_results=java_parse_results,
                     call_graph_builder=call_graph_builder,
                 )
+            elif config.app_key == 'direct':
+                from .sql_extractors.mybatis_direct_sql_extractor import MyBatisDirectSQLExtractor
+                return MyBatisDirectSQLExtractor(
+                    config=config,
+                    xml_parser=xml_parser,
+                    java_parse_results=java_parse_results,
+                    call_graph_builder=call_graph_builder,
+                )
             else:
                 from .sql_extractors.mybatis_sql_extractor import MyBatisSQLExtractor
 

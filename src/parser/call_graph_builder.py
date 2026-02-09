@@ -19,6 +19,7 @@ except ImportError:
 from models.call_relation import CallRelation
 from models.endpoint import Endpoint
 from models.method import Method
+
 from persistence.cache_manager import CacheManager
 
 from .java_ast_parser import ClassInfo, JavaASTParser
@@ -387,19 +388,26 @@ class CallGraphBuilder:
                 
                 if endpoint_class_info.is_interface_class:
                     # 해당 인터페이스를 구현하는 클래스 찾기 (최적화된 방식 - 원래 로직 복원)
-                    found_impl_classes = set()
+                    # 해당 인터페이스를 구현하는 클래스 찾기 (최적화된 방식 - 원래 로직 복원)
+                    # ClassInfo 객체는 unhashable하므로 set 대신 dict를 사용하여 중복 제거
+                    found_impl_classes_map = {}
                     
                     endpoint_simple_name = endpoint_class_name.split(".")[-1]
                     
                     # 1. 전체 이름 일치 확인 (패키지 포함)
                     if endpoint_class_name in full_interface_map:
-                        found_impl_classes.update(full_interface_map[endpoint_class_name])
+                        for cls in full_interface_map[endpoint_class_name]:
+                            # 식별자로 full name 사용
+                            key = f"{cls.package}.{cls.name}" if cls.package else cls.name
+                            found_impl_classes_map[key] = cls
                         
                     # 2. 단순 이름 일치 확인 (원래 단순 이름으로 선언된 인터페이스만)
                     if endpoint_simple_name in simple_interface_map:
-                        found_impl_classes.update(simple_interface_map[endpoint_simple_name])
+                        for cls in simple_interface_map[endpoint_simple_name]:
+                            key = f"{cls.package}.{cls.name}" if cls.package else cls.name
+                            found_impl_classes_map[key] = cls
                     
-                    for impl_cls in found_impl_classes:
+                    for impl_cls in found_impl_classes_map.values():
                         # 구현 클래스의 메서드 시그니처 구성
                         impl_method_signature = f"{impl_cls.name}.{endpoint_method_name}"
                         
