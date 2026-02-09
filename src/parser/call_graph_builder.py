@@ -364,18 +364,17 @@ class CallGraphBuilder:
             )
 
         # 인터페이스 구현체 매핑 미리 생성 (Inverted Index)
-        # Interface Name -> List[Implementing Class]
-        interface_impl_map = defaultdict(list)
+        # full_map: 패키지가 포함된 인터페이스 이름 -> 구현 클래스 목록
+        # simple_map: 단순 인터페이스 이름 -> 구현 클래스 목록
+        full_interface_map = defaultdict(list)
+        simple_interface_map = defaultdict(list)
+
         for cls in all_classes:
             for interface_name in cls.interfaces:
-                # 1. 완벽히 일치하는 이름으로 매핑
-                interface_impl_map[interface_name].append(cls)
-                
-                # 2. 패키지가 포함된 경우, 단순 이름으로도 매핑
                 if "." in interface_name:
-                    simple_name = interface_name.split(".")[-1]
-                    if simple_name != interface_name:
-                        interface_impl_map[simple_name].append(cls)
+                    full_interface_map[interface_name].append(cls)
+                else:
+                    simple_interface_map[interface_name].append(cls)
 
         # 인터페이스 엔드포인트에 대한 구현 클래스의 call relation 추가
         for endpoint in self.endpoints:
@@ -387,19 +386,18 @@ class CallGraphBuilder:
                 endpoint_class_info = self.class_name_to_info[endpoint_class_name]
                 
                 if endpoint_class_info.is_interface_class:
-                    # 해당 인터페이스를 구현하는 클래스 찾기 (최적화된 방식)
+                    # 해당 인터페이스를 구현하는 클래스 찾기 (최적화된 방식 - 원래 로직 복원)
                     found_impl_classes = set()
                     
-                    # 1. endpoint_class_name으로 조회
-                    if endpoint_class_name in interface_impl_map:
-                        found_impl_classes.update(interface_impl_map[endpoint_class_name])
+                    endpoint_simple_name = endpoint_class_name.split(".")[-1]
+                    
+                    # 1. 전체 이름 일치 확인 (패키지 포함)
+                    if endpoint_class_name in full_interface_map:
+                        found_impl_classes.update(full_interface_map[endpoint_class_name])
                         
-                    # 2. endpoint_class_name이 패키지를 포함하는 경우, 단순 이름으로도 조회
-                    # (구현 클래스가 패키지 없이 인터페이스명을 명시했을 경우 대응)
-                    if "." in endpoint_class_name:
-                        simple_endpoint_name = endpoint_class_name.split(".")[-1]
-                        if simple_endpoint_name in interface_impl_map:
-                            found_impl_classes.update(interface_impl_map[simple_endpoint_name])
+                    # 2. 단순 이름 일치 확인 (원래 단순 이름으로 선언된 인터페이스만)
+                    if endpoint_simple_name in simple_interface_map:
+                        found_impl_classes.update(simple_interface_map[endpoint_simple_name])
                     
                     for impl_cls in found_impl_classes:
                         # 구현 클래스의 메서드 시그니처 구성
