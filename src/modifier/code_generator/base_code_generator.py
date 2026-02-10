@@ -389,26 +389,25 @@ class BaseCodeGenerator(ABC):
 
             # 각 call_stack 확인
             for call_stack in call_stacks:
-                if not isinstance(call_stack, list):
+                if not isinstance(call_stack, list) or not call_stack:
                     continue
 
-                # call_stack 내 method_signature 중 하나라도 file_class_names와 매칭되는지 확인
-                for method_sig in call_stack:
-                    if not isinstance(method_sig, str):
-                        continue
+                # call_stack의 시작점(첫 번째 메서드)만 검사
+                first_method = call_stack[0]
+                if not isinstance(first_method, str):
+                    continue
 
-                    # method_signature에서 클래스명 추출 (예: "ClassName.methodName" -> "ClassName")
-                    if "." in method_sig:
-                        method_class_name = method_sig.split(".")[0]
-                    else:
-                        method_class_name = method_sig
+                # method_signature에서 클래스명 추출 (예: "ClassName.methodName" -> "ClassName")
+                if "." in first_method:
+                    method_class_name = first_method.split(".")[0]
+                else:
+                    method_class_name = first_method
 
-                    # file_class_names와 비교 (정확히 일치하는 경우만)
-                    if method_class_name in file_class_names:
-                        # 중복 방지
-                        if call_stack not in call_stacks_list:
-                            call_stacks_list.append(call_stack)
-                        break
+                # file_class_names와 비교 (정확히 일치하는 경우만)
+                if method_class_name in file_class_names:
+                    # 중복 방지
+                    if call_stack not in call_stacks_list:
+                        call_stacks_list.append(call_stack)
 
         # JSON 문자열로 변환
         return json.dumps(call_stacks_list, indent=2, ensure_ascii=False)
@@ -442,20 +441,18 @@ class BaseCodeGenerator(ABC):
                 is_relevant = False
 
                 for call_stack in call_stacks:
-                    if not isinstance(call_stack, list):
+                    if not isinstance(call_stack, list) or not call_stack:
                         continue
-                    for method_sig in call_stack:
-                        if not isinstance(method_sig, str):
-                            continue
-                        # method_signature에서 클래스명 추출
-                        if "." in method_sig:
-                            method_class_name = method_sig.split(".")[0]
-                        else:
-                            method_class_name = method_sig
-                        if method_class_name in file_class_names:
-                            is_relevant = True
-                            break
-                    if is_relevant:
+                    # call_stack의 시작점(첫 번째 메서드)만 검사
+                    first_method = call_stack[0]
+                    if not isinstance(first_method, str):
+                        continue
+                    if "." in first_method:
+                        method_class_name = first_method.split(".")[0]
+                    else:
+                        method_class_name = first_method
+                    if method_class_name in file_class_names:
+                        is_relevant = True
                         break
 
                 if not is_relevant:
