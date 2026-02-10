@@ -64,11 +64,11 @@ You must output a block for **EVERY** file listed in the input, using the exact 
 ======MODIFIED_CODE======
 <mapper namespace="com.example.Mapper">
     <!-- Existing comment kept -->
-    <resultMap id="newMap" type="User">
-        <result column="NAME" property="name" typeHandler="com.samsunglife.drt.cms.config.mybatis.type.KsignIDNamValTypeHandler"/>
+    <resultMap id="UserMap" type="User">
+        <result column="NAME" property="name" typeHandler="com.samsunglife.__prj__.config.mybatis.type.KsignNameEncrypTypeHandler"/>
     </resultMap>
     
-    <select id="select1" resultMap="newMap">
+    <select id="select1" resultMap="UserMap">
         SELECT * FROM USERS
     </select>
 </mapper>

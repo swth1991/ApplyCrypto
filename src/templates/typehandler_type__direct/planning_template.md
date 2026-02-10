@@ -75,17 +75,17 @@ Data mapping falls into two categories, each requiring a specific modification s
 1. **Input Mapping (`input_mapping`) - Encryption for Incoming Data**
    - **Context**: Occurs when data acts as input for a query (e.g., parameters in a `WHERE` clause or values in `INSERT`/`UPDATE`). The data must be encrypted *before* the database operation.
    - **Action**: Modify the SQL parameter placeholder to apply the TypeHandler inline.
-   - **Example**: Change `#{myName}` to `#{myName, typeHandler=com.samsunglife.drt.cms.config.mybatis.type.KsignIDNamValTypeHandler}`.
+   - **Example**: Change `#{myName}` to `#{myName, typeHandler=com.samsunglife.__prj__.config.mybatis.type.KsignNameEncrypTypeHandler}`.
 
 2. **Output Mapping (`output_mapping`) - Decryption for Return Data**
    - **Context**: Occurs when data is returned from a `SELECT` query. The data must be decrypted properly before reaching upstream layers (Service, Controller).
    - **Action**: Ensure the query maps to a `<resultMap>` and attach the TypeHandler to the specific `<result>` tag.
    - **Example**: 
      ```xml
-     <result property="myName" column="MY_NAME" typeHandler="com.samsunglife.drt.cms.config.mybatis.type.KsignIDNamValTypeHandler" />
+     <result property="myName" column="MY_NAME" typeHandler="com.samsunglife.__prj__.config.mybatis.type.KsignNameEncrypTypeHandler" />
      ```
 
-  **Notes**: TypeHandler must be specified with its **full path** (e.g., `com.samsunglife.drt.cms.config.mybatis.type.KsignIDNamValTypeHandler`). Aliases are NOT used.
+  **Notes**: TypeHandler must be specified with its **full path** (e.g., `com.samsunglife.__prj__.config.mybatis.type.KsignNameEncrypTypeHandler`). Aliases are NOT used.
 
 ### Source Files to Modify
 
@@ -98,9 +98,7 @@ Data mapping falls into two categories, each requiring a specific modification s
 ### TypeHandler Prerequisite
 TypeHandlers are pre-defined in the context. You must select the appropriate TypeHandler from the following list based on the column type:
 
-- **Date of Birth (DOB)**: `com.samsunglife.drt.cms.config.mybatis.type.KsignIDBirValTypeHandler`
-- **Name**: `com.samsunglife.drt.cms.config.mybatis.type.KsignIDNamValTypeHandler`
-- **Resident Registration Number (RRN)**: `com.samsunglife.drt.cms.config.mybatis.type.KsignIDRrnValTypeHandler`
+- **Name**: `com.samsunglife.__prj__.config.mybatis.type.KsignNameEncrypTypeHandler`
 
 Check the target column type and choose the appropriate TypeHandler.
 
@@ -109,18 +107,23 @@ Check the target column type and choose the appropriate TypeHandler.
 2. **Define ResultMap**: If a ResultMap needs to be defined, provide instructions on how to define it. Include a code example as a hint.
 
    **Instructions:**
-   - **id**: Set the ID to `{voname} + "Result"`. `voname` usually starts with lower case with camel case (e.g., `exampleDaoModel` → `exampleDaoModelResult`).
-   - **type**: `com.example.code.ExampleDaoModel` should be set as proper VO name. If you don't know about full path, just put VO name only (e.g., `ExampleDaoModel`).
+   - **id**: Set the ID to `{voname} + "Map"`. `voname` is the class name (e.g., `ExampleDto` → `ExampleDtoMap`).
+   - **type**: `com.example.code.ExampleDto` should be set as proper VO name. If you don't know about full path, just put VO name only (e.g., `ExampleDto`).
 
    **Example:**
    ```xml
-   <resultMap id="exampleDaoModelResult" type="ExampleDaoModel">
+   <resultMap id="ExampleDtoMap" type="ExampleDto">
        <result property='name' column="NAME" />
        <!-- Example of attaching a TypeHandler -->
-       <result property='column_to_enc' column="COLUMN_TO_ENC" typeHandler="com.samsunglife.drt.cms.config.mybatis.type.KsignIDNamValTypeHandler" />
+       <result property='column_to_enc' column="COLUMN_TO_ENC" typeHandler="com.samsunglife.__prj__.config.mybatis.type.KsignNameEncrypTypeHandler" />
    </resultMap>
    ```
    **CRITICAL**: You MUST include **ALL** properties from the Value Object (VO) in the `resultMap`. Do not omit any result items. Your job is to add all information from the VO to the `resultMap` to ensure the developer does not need to manually modify it later. **Automapping is NOT supported.**
+
+   **VO Analysis Rules:**
+   - **Utilization**: The VO file for the relevant TypeHandler is provided. Use it to construct the ResultMap.
+   - **Inheritance**: If the VO extends a parent class, you must include all properties from the ancestor file(s).
+   - **Gap Filling**: If a ResultMap already exists but is incomplete, you must add the missing fields to ensure 100% coverage of the VO.
 
 
 
@@ -131,7 +134,7 @@ Check the target column type and choose the appropriate TypeHandler.
 
    ```diff
    - <select id='selectExample' parameterType="ExampleDaoModel" resultType="exampleDaoModel">
-   + <select id='selectExample' parameterType="ExampleDaoModel" resultMap="exampleDaoModelResult">
+   + <select id='selectExample' parameterType="ExampleDaoModel" resultMap="ExampleDaoModelMap">
    ```
 
    **Case 2: Inline TypeHandler (Input Mapping)**
@@ -145,7 +148,7 @@ Check the target column type and choose the appropriate TypeHandler.
    ) VALUES (
      #{id}
    -  ,#{targetColumn}
-   +  ,#{targetColumn, typeHandler=com.samsunglife.drt.cms.config.mybatis.type.KsignIdNamValTypeHandler}
+   +  ,#{targetColumn, typeHandler=com.samsunglife.__prj__.config.mybatis.type.KsignNameEncrypTypeHandler}
    )
    </insert>
    ```
@@ -170,7 +173,7 @@ List each required modification using the structured format below. Ensure the `c
   <update id="updateEmployeeName" parameterType="com.example.vo.EmployeeVO">
       UPDATE TB_EMPLOYEE
       SET EMAIL = #{email}
-      WHERE NAME = #{name, typeHandler=com.samsunglife.drt.cms.config.mybatis.type.KsignIDNamValTypeHandler}
+      WHERE NAME = #{name, typeHandler=com.samsunglife.__prj__.config.mybatis.type.KsignNameEncrypTypeHandler}
   </update> 
   ```
   
