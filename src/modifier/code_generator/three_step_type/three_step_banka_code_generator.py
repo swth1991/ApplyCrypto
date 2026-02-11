@@ -40,6 +40,37 @@ class ThreeStepBankaCodeGenerator(ThreeStepCodeGenerator):
         super().__init__(config)
         self._java_parser = JavaASTParser()
 
+    # ========== Phase 1 오버라이드 (VO 제외) ==========
+
+    def _create_data_mapping_prompt(
+        self,
+        modification_context: ModificationContext,
+        table_access_info: TableAccessInfo,
+    ) -> str:
+        """Phase 1 (Data Mapping) 프롬프트 — banka는 VO 파일 제외
+
+        banka 타입에서는 VO 파일을 Phase 1 프롬프트에 포함시키지 않습니다.
+        SQL 쿼리와 테이블 정보만으로 데이터 매핑을 분석합니다.
+        """
+        table_info = {
+            "table_name": modification_context.table_name,
+            "columns": modification_context.columns,
+        }
+        table_info_str = json.dumps(table_info, indent=2, ensure_ascii=False)
+
+        sql_queries_str = self._get_sql_queries_for_prompt(
+            table_access_info, modification_context.file_paths
+        )
+
+        variables = {
+            "table_info": table_info_str,
+            "vo_files": "",  # banka에서는 Phase 1에 VO 포함하지 않음
+            "sql_queries": sql_queries_str,
+        }
+
+        template_str = self._load_template(self.data_mapping_template_path)
+        return self._render_template(template_str, variables)
+
     # ========== Phase 2 오버라이드 ==========
 
     def _create_planning_prompt(

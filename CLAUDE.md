@@ -83,8 +83,11 @@ CLI Layer → Configuration → Collection → Parsing → Analysis → Modifica
   - `JdbcSQLExtractor`, `JpaSQLExtractor`
   - `AnyframeJdbcSQLExtractor`, `AnyframeJdbcBatSQLExtractor`
 - `BaseCodeGenerator`: 코드 생성 전략 (`src/modifier/code_generator/`)
+  - `ThreeStepBankaCodeGenerator`: BNK 온라인 전용 (Phase 1 VO 제외, Phase 2 BIZ 메서드만 추출)
 - `BaseMultiStepCodeGenerator`: 다단계 코드 생성 베이스 (`src/modifier/code_generator/multi_step_base/`)
 - `ContextGenerator`: 컨텍스트 생성 전략 (`src/modifier/context_generator/`)
+  - `AnyframeContextGenerator`: import 기반 파일 그룹 생성 (`jdbc`, `jpa`)
+  - `AnyframeBankaContextGenerator`: call_stack 기반 파일 그룹 생성 (`jdbc_banka`), `BaseContextGenerator` 직접 상속
 
 **Factory Pattern** - 설정 기반 전략 생성:
 - `LLMFactory`, `EndpointExtractionStrategyFactory`, `SQLExtractorFactory`
@@ -97,7 +100,7 @@ The `config.json` file drives the entire workflow. Key fields:
 | Field | Description |
 |-------|-------------|
 | `framework_type` | `SpringMVC`, `AnyframeSarangOn`, `AnyframeCCS`, `anyframe_ccs_batch` 등 |
-| `sql_wrapping_type` | `mybatis`, `mybatis_ccs`, `ccs_batch`, `bnk_batch`, `jdbc`, `jpa` |
+| `sql_wrapping_type` | `mybatis`, `mybatis_ccs`, `ccs_batch`, `bnk_batch`, `jdbc`, `jdbc_banka`, `jpa` |
 | `modification_type` | `ControllerOrService`, `ServiceImplOrBiz`, `TypeHandler`, `TwoStep`, `ThreeStep` |
 | `llm_provider` | `watsonx_ai`, `watsonx_ai_on_prem`, `claude_ai`, `openai`, `mock` |
 | `access_tables` | 암호화 대상 테이블/칼럼 목록 |
@@ -173,11 +176,9 @@ Phase 1에서 VO 파일과 SQL 쿼리의 필드 매핑을 먼저 분석하여 Pl
 
 ### Data Persistence
 
-분석 결과는 JSON으로 영속화됩니다:
-- `{project_root}/build/applycrypto_source_files.json`
-- `{project_root}/build/applycrypto_call_graph.json`
-- `{project_root}/build/applycrypto_table_access.json`
-- `{project_root}/build/applycrypto_modification_records.json`
+분석/수정 결과는 대상 프로젝트 내 `.applycrypto/` 디렉토리에 저장됩니다:
+- `{target_project}/.applycrypto/results/` — 수정 결과 (JSON)
+- `{target_project}/.applycrypto/debug/` — 디버그 로그
 
 `CacheManager`는 파싱 결과를 캐싱하여 후속 실행 속도를 높입니다.
 
@@ -188,7 +189,7 @@ Phase 1에서 VO 파일과 SQL 쿼리의 필드 매핑을 먼저 분석하여 Pl
 |------|---------|---------|
 | Analyzers | `*Analyzer` | `DBAccessAnalyzer` |
 | Parsers | `*Parser` | `JavaASTParser` |
-| Generators | `*Generator` | `TwoStepCodeGenerator`, `ThreeStepCCSCodeGenerator` |
+| Generators | `*Generator` | `TwoStepCodeGenerator`, `ThreeStepCCSCodeGenerator`, `ThreeStepBankaCodeGenerator` |
 | Extractors | `*Extractor` | `MyBatisSQLExtractor` |
 | Providers | `*Provider` | `WatsonXAIProvider` |
 
@@ -225,12 +226,20 @@ src/modifier/code_generator/
     ├── execution_template_ccs_batch.md         # Phase 3: CCS Batch 전용
     ├── execution_template_ccs_batch_name_only.md  # Phase 3: CCS Batch 이름만
     ├── execution_template_ccs_name_only.md # Phase 3: CCS 이름만
+    ├── data_mapping_template_bnk_batch.md          # Phase 1: BNK Batch 전용
+    ├── data_mapping_template_bnk_batch_name_only.md # Phase 1: BNK Batch 이름만
+    ├── planning_template_bnk_batch.md              # Phase 2: BNK Batch 전용
+    ├── planning_template_bnk_batch_name_only.md    # Phase 2: BNK Batch 이름만
+    ├── execution_template_bnk_batch.md             # Phase 3: BNK Batch 전용
+    ├── execution_template_bnk_batch_name_only.md   # Phase 3: BNK Batch 이름만
     └── vo_extraction_template.md           # VO 추출 보조 템플릿
 ```
 
 주요 템플릿 변수: `{{source_code}}`, `{{table_info}}`, `{{call_chain}}`, `{{mapping_info}}`
 
 **CCS 프로젝트용 템플릿**: `*_ccs.md` 접미사가 붙은 템플릿은 AnyframeCCS 프레임워크 전용이며, `*_ccs_name_only.md`는 이름 필드만 처리하는 경량 버전입니다.
+
+**BNK Batch 프로젝트용 템플릿**: `*_bnk_batch.md` 접미사가 붙은 템플릿은 BNK 배치 프레임워크 전용입니다.
 
 ### Error Handling
 - 커스텀 예외: `ConfigurationError`, `CodeGeneratorError`, `PersistenceError`

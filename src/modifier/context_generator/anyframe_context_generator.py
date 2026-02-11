@@ -137,7 +137,6 @@ class AnyframeContextGenerator(BaseContextGenerator):
         java_parser,
         visited: set,
         chain: List[str],
-        skip_disk_fallback: bool = False,
     ) -> Optional[List[str]]:
         """
         BIZ 파일에서 시작하여 target DQM/DEM까지의 체인을 찾습니다.
@@ -239,7 +238,6 @@ class AnyframeContextGenerator(BaseContextGenerator):
                         java_parser,
                         visited,
                         current_chain,
-                        skip_disk_fallback=skip_disk_fallback,
                     )
                     if result:
                         return result  # 타겟 찾음!
@@ -256,34 +254,30 @@ class AnyframeContextGenerator(BaseContextGenerator):
                     java_parser,
                     visited,
                     current_chain,
-                    skip_disk_fallback=skip_disk_fallback,
                 )
                 if result:
                     return result  # 타겟 찾음!
 
             # Fallback: layer_files에 없는 BIZ도 확인
-            # skip_disk_fallback=True이면 건너뜀 (call_stack 필터가 이미 정확한 BIZ를 선별)
-            if not skip_disk_fallback:
-                for imp in biz_imports:
-                    if "biz" not in imp.lower() and "BIZ" not in imp:
-                        continue
+            for imp in biz_imports:
+                if "biz" not in imp.lower() and "BIZ" not in imp:
+                    continue
 
-                    # Import → 파일 경로 변환
-                    nested_biz_path = self._convert_import_to_file_path(imp, base_src_path)
-                    if nested_biz_path and nested_biz_path not in visited:
-                        result = self._find_biz_chain_to_target(
-                            nested_biz_path,
-                            base_src_path,
-                            biz_files,
-                            target_dqm_files,
-                            target_dem_files,
-                            java_parser,
-                            visited,
-                            current_chain,
-                            skip_disk_fallback=skip_disk_fallback,
-                        )
-                        if result:
-                            return result  # 타겟 찾음!
+                # Import → 파일 경로 변환
+                nested_biz_path = self._convert_import_to_file_path(imp, base_src_path)
+                if nested_biz_path and nested_biz_path not in visited:
+                    result = self._find_biz_chain_to_target(
+                        nested_biz_path,
+                        base_src_path,
+                        biz_files,
+                        target_dqm_files,
+                        target_dem_files,
+                        java_parser,
+                        visited,
+                        current_chain,
+                    )
+                    if result:
+                        return result  # 타겟 찾음!
 
             # 타겟 못 찾음
             return None
@@ -509,35 +503,9 @@ class AnyframeContextGenerator(BaseContextGenerator):
         # ═══════════════════════════════════════════════════════════════
 
         svc_files_raw = layer_files.get("svc", [])
-        biz_files_raw = layer_files.get("biz", [])
+        biz_files = layer_files.get("biz", [])
         repository_files = layer_files.get("Repository", [])
         dem_daq_files = layer_files.get("dem_daq", [])
-
-        # BIZ 필터 1: stem이 "BIZ"로 끝나는 파일만 (Util 등 제외)
-        biz_files = [f for f in biz_files_raw if Path(f).stem.endswith("BIZ")]
-        if len(biz_files) < len(biz_files_raw):
-            excluded = [Path(f).name for f in biz_files_raw if not Path(f).stem.endswith("BIZ")]
-            logger.info(
-                f"BIZ stem 필터: {len(biz_files_raw)} → {len(biz_files)}개 "
-                f"(제외: {', '.join(excluded[:5])}{'...' if len(excluded) > 5 else ''})"
-            )
-
-        # BIZ 필터 2: call_stack에 등장하는 BIZ 클래스만 포함 (다른 테이블 BIZ 제외)
-        if table_access_info and biz_files:
-            call_stack_classes: set = set()
-            for sq in table_access_info.sql_queries:
-                for cs in sq.get("call_stacks", []):
-                    if not isinstance(cs, list):
-                        continue
-                    for entry in cs:
-                        if isinstance(entry, str) and "." in entry:
-                            call_stack_classes.add(entry.split(".")[0])
-            biz_files_before = len(biz_files)
-            biz_files = [f for f in biz_files if Path(f).stem in call_stack_classes]
-            if len(biz_files) < biz_files_before:
-                logger.info(
-                    f"BIZ call_stack 필터: {biz_files_before} → {len(biz_files)}개"
-                )
 
         # SVC 파일에서 실제 Service 구현만 필터링 (VO 파일 제외)
         svc_files_all = [
@@ -711,7 +679,6 @@ class AnyframeContextGenerator(BaseContextGenerator):
                             java_parser,
                             visited,
                             [],
-                            skip_disk_fallback=bool(table_access_info),
                         )
                         if chain:
                             all_biz_chains.append(chain)
@@ -720,9 +687,7 @@ class AnyframeContextGenerator(BaseContextGenerator):
                             )
 
                 # Step 2: layer_files에 없는 BIZ도 확인 (fallback)
-                # table_access_info가 있으면 call_stack 필터가 이미 정확한 BIZ를 선별했으므로
-                # 디스크 탐색 fallback을 건너뜀 (다른 테이블의 BIZ 포함 방지)
-                if base_src_path and not table_access_info:
+                if base_src_path:
                     for import_stmt in impl_imports:
                         if (
                             "biz" not in import_stmt.lower()
@@ -827,8 +792,8 @@ class AnyframeContextGenerator(BaseContextGenerator):
                         logger.debug(f"BIZ 처리 실패: {Path(biz_file).name} - {e}")
 
                 file_group_paths.extend(matched_biz_files)
-                # file_group_paths.extend(matched_dqm_files)
-                # file_group_paths.extend(matched_dem_files)
+                file_group_paths.extend(matched_dqm_files)
+                file_group_paths.extend(matched_dem_files)
 
                 # ─────────────────────────────────────────────────────────
                 # STEP 2-5: DQM/DEM imports 수집 (VO 선택용)
