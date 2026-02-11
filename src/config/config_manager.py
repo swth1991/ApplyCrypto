@@ -113,8 +113,11 @@ class Configuration(BaseModel):
     )
     framework_type: Literal[
         "SpringMVC",
+        "SpringDirect",
+        "SpringDigitalChannel",
         "Anyframe",
-        "AnyframeSarangOn",
+        "AnyframeSarangon",
+        "AnyframeSarangonBatch",
         "AnyframeOld",
         "AnyframeEtc",
         "AnyframeCCS",
@@ -158,7 +161,6 @@ class Configuration(BaseModel):
         "diff",
         description="코드 생성 방식 (full_source: 전체 코드, diff: 변경분, part: 부분 코드)",
     )
-    app_key: Optional[str] = Field(None, description="애플리케이션 키")
 
     def get_table_names(self) -> List[str]:
         """
