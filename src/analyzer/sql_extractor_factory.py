@@ -83,6 +83,18 @@ class SQLExtractorFactory:
                 call_graph_builder=call_graph_builder,
             )
 
+        elif sql_wrapping_type == "jdbc_banka":
+            from .sql_extractors.anyframe_jdbc_sql_extractor import (
+                AnyframeJDBCSQLExtractor,
+            )
+
+            return AnyframeJDBCSQLExtractor(
+                config=config,
+                xml_parser=xml_parser,
+                java_parse_results=java_parse_results,
+                call_graph_builder=call_graph_builder,
+            )
+
         elif sql_wrapping_type == "jdbc":
             if "BatBanka" in config.framework_type:
                 from .sql_extractors.anyframe_jdbc_bat_sql_extractor import (

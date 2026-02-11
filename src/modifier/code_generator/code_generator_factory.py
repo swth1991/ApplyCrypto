@@ -70,9 +70,15 @@ class CodeGeneratorFactory:
             return TwoStepCodeGenerator(config=config)
 
         elif modification_type == "ThreeStep":
-            # CCS 프로젝트 여부에 따라 적절한 ThreeStep 생성기 선택
             sql_wrapping_type = config.sql_wrapping_type
-            if sql_wrapping_type == "mybatis_ccs":
+            if sql_wrapping_type == "jdbc_banka":
+                from .three_step_type.three_step_banka_code_generator import (
+                    ThreeStepBankaCodeGenerator,
+                )
+
+                # BNK 온라인 전용: BIZ 파일 메서드 레벨 추출로 프롬프트 최적화
+                return ThreeStepBankaCodeGenerator(config=config)
+            elif sql_wrapping_type == "mybatis_ccs":
                 from .three_step_type.three_step_ccs_code_generator import (
                     ThreeStepCCSCodeGenerator,
                 )

@@ -38,7 +38,13 @@ class ContextGeneratorFactory:
         Returns:
             BaseContextGenerator: An instance of ContextGenerator.
         """
-        if config.sql_wrapping_type == "jdbc":
+        if config.sql_wrapping_type == "jdbc_banka":
+            from modifier.context_generator.anyframe_banka_context_generator import (
+                AnyframeBankaContextGenerator,
+            )
+
+            return AnyframeBankaContextGenerator(config, code_generator)
+        elif config.sql_wrapping_type == "jdbc":
             return JdbcContextGenerator(config, code_generator)
         elif config.sql_wrapping_type == "mybatis":
             return MybatisContextGenerator(config, code_generator)
