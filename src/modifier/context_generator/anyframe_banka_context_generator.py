@@ -80,16 +80,19 @@ class AnyframeBankaContextGenerator(BaseContextGenerator):
             return []
 
         # ═══ STEP 1: 레이어별 파일 추출 (부모와 동일) ═══
-        svc_files_raw = layer_files.get("svc", [])
+        # classify_layer()가 "SVC"/"SVCImpl"을 반환하고 _find_upper_layer_files()에서
+        # .lower()로 변환되므로 "svc"와 "svcimpl" 키가 별도로 존재합니다.
+        # 두 키를 병합하여 SVC Interface + SVCImpl을 모두 포함합니다.
+        svc_files_raw = layer_files.get("svc", []) + layer_files.get("svcimpl", [])
         biz_files_raw = layer_files.get("biz", [])
         repository_files = layer_files.get("Repository", [])
         dem_daq_files = layer_files.get("dem_daq", [])
 
-        # BIZ stem 필터 (Util 제외)
-        biz_files = [f for f in biz_files_raw if Path(f).stem.endswith("BIZ")]
+        # BIZ stem 필터 (Util 제외, 대소문자 무시)
+        biz_files = [f for f in biz_files_raw if Path(f).stem.upper().endswith("BIZ")]
         if len(biz_files) < len(biz_files_raw):
             excluded = [
-                Path(f).name for f in biz_files_raw if not Path(f).stem.endswith("BIZ")
+                Path(f).name for f in biz_files_raw if not Path(f).stem.upper().endswith("BIZ")
             ]
             logger.info(
                 f"BIZ stem 필터: {len(biz_files_raw)} → {len(biz_files)}개 "
@@ -207,6 +210,11 @@ class AnyframeBankaContextGenerator(BaseContextGenerator):
                             impl_to_biz_names[svc_name].add(class_name)
                         elif (
                             class_name in interface_name_to_path
+                            and class_name != svc_name
+                        ):
+                            impl_to_svc_names[svc_name].add(class_name)
+                        elif (
+                            class_name in impl_name_to_path
                             and class_name != svc_name
                         ):
                             impl_to_svc_names[svc_name].add(class_name)
@@ -473,11 +481,11 @@ class AnyframeBankaContextGenerator(BaseContextGenerator):
     # ========== BIZ 메서드 추출 헬퍼 ==========
 
     def _is_biz_file(self, file_path: str) -> bool:
-        """BIZ 파일 여부 판별 — stem이 'BIZ'로 끝나는 파일만
+        """BIZ 파일 여부 판별 — stem이 'BIZ'로 끝나는 파일만 (대소문자 무시)
 
         Util 파일(BIZUtil, StringUtil 등)은 제외합니다.
         """
-        return Path(file_path).stem.endswith("BIZ")
+        return Path(file_path).stem.upper().endswith("BIZ")
 
     def _extract_raw_call_stacks(
         self,

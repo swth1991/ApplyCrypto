@@ -122,11 +122,11 @@ class ThreeStepBankaCodeGenerator(ThreeStepCodeGenerator):
     # ========== 헬퍼 메서드 ==========
 
     def _is_biz_file(self, file_path: str) -> bool:
-        """BIZ 파일 여부 판별 — stem이 'BIZ'로 끝나는 파일만
+        """BIZ 파일 여부 판별 — stem이 'BIZ'로 끝나는 파일만 (대소문자 무시)
 
         Util 파일(BIZUtil, StringUtil 등)은 제외합니다.
         """
-        return Path(file_path).stem.endswith("BIZ")
+        return Path(file_path).stem.upper().endswith("BIZ")
 
     def _extract_raw_call_stacks(
         self,
@@ -184,6 +184,11 @@ class ThreeStepBankaCodeGenerator(ThreeStepCodeGenerator):
 
         return target_methods
 
+    # 메서드 추출 시 앞뒤 패딩 라인 수
+    # tree-sitter AST가 메서드 범위를 부정확하게 잡는 경우를 대비하여 여유있게 설정
+    BIZ_METHOD_PADDING_BEFORE = 20
+    BIZ_METHOD_PADDING_AFTER = 20
+
     def _extract_methods_from_biz_file(
         self,
         file_path: str,
@@ -195,7 +200,11 @@ class ThreeStepBankaCodeGenerator(ThreeStepCodeGenerator):
         알고리즘:
         1. call_stacks에서 이 파일 클래스의 메서드명 수집
         2. JavaASTParser로 파일 파싱 → 메서드별 line_number/end_line_number 획득
-        3. 매칭 메서드의 라인 범위만 추출
+        3. 매칭 메서드의 라인 범위 + 앞뒤 패딩을 추출
+
+        앞쪽 패딩(BIZ_METHOD_PADDING_BEFORE)은 어노테이션(@Override, @Transactional 등)과
+        Javadoc 주석을 포함하기 위해 필요하고, 뒤쪽 패딩(BIZ_METHOD_PADDING_AFTER)은
+        메서드 종료 후 컨텍스트를 포함합니다.
 
         Fallback: call_stack에 매칭되는 메서드가 없으면 전체 파일 반환
         """
@@ -210,7 +219,7 @@ class ThreeStepBankaCodeGenerator(ThreeStepCodeGenerator):
             return self._read_single_file(file_path, add_line_num)
 
         # JavaASTParser로 메서드 정보 획득
-        tree, error = self._java_parser.parse_file(Path(file_path))
+        tree, error = self._java_parser.parse_file(Path(file_path), remove_comments=False)
         if error:
             logger.warning(
                 f"BIZ 파일 파싱 실패, 전체 포함: {Path(file_path).name} - {error}"
@@ -242,24 +251,29 @@ class ThreeStepBankaCodeGenerator(ThreeStepCodeGenerator):
             logger.warning(f"BIZ 파일 읽기 실패: {file_path} - {e}")
             return ""
 
+        total_lines = len(all_lines)
         extracted_parts: List[str] = []
         for method_name, start_line, end_line in sorted(
             method_ranges, key=lambda x: x[1]
         ):
+            # 앞뒤 패딩 적용 (파일 범위 클램핑)
+            padded_start = max(1, start_line - self.BIZ_METHOD_PADDING_BEFORE)
+            padded_end = min(total_lines, end_line + self.BIZ_METHOD_PADDING_AFTER)
+
             # line_number는 1-based, 리스트 인덱스는 0-based
-            lines = all_lines[start_line - 1 : end_line]
+            lines = all_lines[padded_start - 1 : padded_end]
             if add_line_num:
                 numbered = [
-                    f"{start_line + i}|{line.rstrip()}"
+                    f"{padded_start + i}|{line.rstrip()}"
                     for i, line in enumerate(lines)
                 ]
                 extracted_parts.append(
-                    f"// --- Method: {method_name} (lines {start_line}-{end_line}) ---\n"
+                    f"// --- Method: {method_name} (lines {padded_start}-{padded_end}) ---\n"
                     + "\n".join(numbered)
                 )
             else:
                 extracted_parts.append(
-                    f"// --- Method: {method_name} (lines {start_line}-{end_line}) ---\n"
+                    f"// --- Method: {method_name} (lines {padded_start}-{padded_end}) ---\n"
                     + "".join(lines)
                 )
 

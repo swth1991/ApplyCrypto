@@ -31,10 +31,10 @@ class BatchEndpointExtractionBase(EndpointExtractionStrategy):
     프레임워크별 커스터마이즈가 가능합니다.
     """
 
-    # 레이어 패턴 정의 (서브클래스에서 오버라이드 가능)
+    # 레이어 패턴 정의 (서브클래스에서 오버라이드 가능, 대소문자 무시 비교)
     LAYER_PATTERNS = {
+        "BATVO": ["BATVO"],  # BAT보다 먼저 검사해야 함
         "BAT": ["BAT"],
-        "BATVO": ["BATVO", "BatVO"],
     }
 
     # 엔드포인트 판별 기준 (서브클래스에서 오버라이드 가능)
@@ -85,7 +85,7 @@ class BatchEndpointExtractionBase(EndpointExtractionStrategy):
         Returns:
             Optional[Endpoint]: 엔드포인트 정보
         """
-        if not cls.name.endswith(self.BATCH_CLASS_SUFFIX) or method.name != self.BATCH_METHOD_NAME:
+        if not cls.name.upper().endswith(self.BATCH_CLASS_SUFFIX.upper()) or method.name != self.BATCH_METHOD_NAME:
             return None
 
         method_signature = f"{cls.name}.{method.name}"
@@ -135,12 +135,11 @@ class BatchEndpointExtractionBase(EndpointExtractionStrategy):
         Returns:
             str: 레이어명 (BAT, BATVO, Unknown)
         """
-        class_name = cls.name
-
-        # 클래스명 패턴 기반 분류
+        # 클래스명 패턴 기반 분류 (대소문자 무시)
+        class_name_upper = cls.name.upper()
         for layer, patterns in self.LAYER_PATTERNS.items():
             for pattern in patterns:
-                if class_name.endswith(pattern):
+                if class_name_upper.endswith(pattern.upper()):
                     return layer
 
         # 패키지 기반 분류

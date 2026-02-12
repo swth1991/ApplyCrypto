@@ -33,18 +33,18 @@ class AnyframeCCSEndpointExtraction(SpringMVCEndpointExtraction):
         - DVO/SVO: Value Objects
     """
 
-    # AnyframeCCS 레이어 분류 패턴
+    # AnyframeCCS 레이어 분류 패턴 (대소문자 무시 비교 - 패턴은 대문자 기준)
     LAYER_PATTERNS = {
         # CTL: Controller 레이어
-        "CTL": ["CTL", "Controller", "RestController", "WebController"],
+        "CTL": ["CTL", "CONTROLLER", "RESTCONTROLLER", "WEBCONTROLLER"],
+        # SVCImpl: Service 구현 클래스 - SVC보다 먼저 검사해야 함
+        "SVCImpl": ["SVCIMPL", "SERVICEIMPL"],
         # SVC: Service 인터페이스
         "SVC": ["SVC"],
-        # SVCImpl: Service 구현 클래스
-        "SVCImpl": ["SVCImpl", "ServiceImpl"],
         # BIZ: Business Component (재사용 가능한 비즈니스 로직)
         "BIZ": ["BIZ"],
         # DQM: Data Query Manager (DAO 역할)
-        "DQM": ["DQM", "DEM", "Repository", "DAO", "Dao"],
+        "DQM": ["DQM", "DEM", "REPOSITORY", "DAO"],
         # VO: Value Objects (DVO, SVO, BVO 통합)
         "DVO": ["DVO"],
         "SVO": ["SVO"],
@@ -74,8 +74,9 @@ class AnyframeCCSEndpointExtraction(SpringMVCEndpointExtraction):
 
         # SVCImpl 레이어 (Service 구현)
         if "Service" in annotation_set:
-            # 클래스명으로 인터페이스/구현 구분
-            if "Impl" in cls.name or cls.name.endswith("SVCImpl"):
+            # 클래스명으로 인터페이스/구현 구분 (대소문자 무시)
+            class_name_upper = cls.name.upper()
+            if "IMPL" in class_name_upper or class_name_upper.endswith("SVCIMPL"):
                 return "SVCImpl"
             return "SVC"
 
@@ -83,24 +84,20 @@ class AnyframeCCSEndpointExtraction(SpringMVCEndpointExtraction):
         if "Repository" in annotation_set:
             return "DQM"
 
-        # BIZ 레이어 (Business Component) - @Component + 클래스명에 BIZ 포함
+        # BIZ 레이어 (Business Component) - @Component + 클래스명에 BIZ 포함 (대소문자 무시)
         if "Component" in annotation_set:
-            if "BIZ" in cls.name or "Biz" in cls.name:
+            if "BIZ" in cls.name.upper():
                 return "BIZ"
             # 패키지명으로도 확인
             package = cls.package.lower() if cls.package else ""
             if "biz" in package:
                 return "BIZ"
 
-        # 클래스명 패턴 기반 분류
-        class_name = cls.name
+        # 클래스명 패턴 기반 분류 (대소문자 무시)
+        class_name_upper = cls.name.upper()
         for layer, patterns in self.LAYER_PATTERNS.items():
             for pattern in patterns:
-                # 패턴이 클래스명에 포함되어 있는지 확인
-                if pattern in class_name:
-                    # SVC vs SVCImpl 구분
-                    if pattern == "SVC" and "Impl" in class_name:
-                        return "SVCImpl"
+                if pattern.upper() in class_name_upper:
                     return layer
 
         # 패키지 기반 분류

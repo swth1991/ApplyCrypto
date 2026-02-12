@@ -128,12 +128,16 @@ class JavaASTParser:
         else:
             self.cache_manager = cache_manager
 
-    def parse_file(self, file_path: Path) -> Tuple[Optional[Tree], Optional[str]]:
+    def parse_file(
+        self, file_path: Path, remove_comments: bool = True
+    ) -> Tuple[Optional[Tree], Optional[str]]:
         """
         Java 파일을 파싱하여 AST로 변환
 
         Args:
             file_path: Java 파일 경로 (Path 객체 또는 문자열)
+            remove_comments: True이면 파싱 전 주석 제거 (기본값).
+                False이면 원본 그대로 파싱하여 라인 번호가 원본 파일과 일치합니다.
 
         Returns:
             Tuple[Optional[Tree], Optional[str]]: (AST 트리, 에러 메시지)
@@ -146,10 +150,11 @@ class JavaASTParser:
             else:
                 file_path = Path(file_path)
 
-            # 캐시 확인
-            cached_ast = self.cache_manager.get_cached_result(file_path)
-            if cached_ast:
-                return cached_ast, None
+            # 캐시 확인 (remove_comments=True일 때만 — False일 때는 캐시 키 충돌 방지)
+            if remove_comments:
+                cached_ast = self.cache_manager.get_cached_result(file_path)
+                if cached_ast:
+                    return cached_ast, None
 
             # 파일 읽기 (여러 인코딩 시도)
             source_code = None
@@ -173,14 +178,16 @@ class JavaASTParser:
                     f"파일을 읽을 수 없습니다: 지원되는 인코딩을 찾을 수 없습니다 (시도한 인코딩: {', '.join(encodings)})",
                 )
 
-            # 주석 제거
-            source_code = JavaUtils.remove_java_comments(source_code)
+            # 주석 제거 (플래그에 따라)
+            if remove_comments:
+                source_code = JavaUtils.remove_java_comments(source_code)
 
             # 파싱
             tree = self.parser.parse(bytes(source_code, "utf8"))
 
-            # 캐시 저장
-            self.cache_manager.set_cached_result(file_path, tree)
+            # 캐시 저장 (remove_comments=True일 때만)
+            if remove_comments:
+                self.cache_manager.set_cached_result(file_path, tree)
 
             return tree, None
 

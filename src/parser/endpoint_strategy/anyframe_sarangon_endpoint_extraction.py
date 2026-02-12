@@ -56,17 +56,17 @@ class AnyframeSarangOnEndpointExtraction(EndpointExtractionStrategy):
 
     # 레이어 분류 패턴 (AnyframeSarangOn 특화)
     LAYER_PATTERNS = {
+        # ServiceImpl: 서비스 구현 클래스 (SVCImpl로 끝남) - SVC보다 먼저 검사해야 함
+        "SVCImpl": [
+            "SVCIMPL",  # APActSVCImpl, ADActSVCImpl 등
+        ],
         # Service: 인터페이스 (I로 시작하고 SVC로 끝남)
         "SVC": [
             "SVC",  # IAPActSVC, IADActSVC 등
         ],
-        # ServiceImpl: 서비스 구현 클래스 (SVCImpl로 끝남)
-        "SVCImpl": [
-            "SVCImpl",  # APActSVCImpl, ADActSVCImpl 등
-        ],
         # Biz: 비즈니스 로직 클래스 (BIZ로 끝남)
         "BIZ": [
-            "BIZ",  # APActBIZ, ADActBIZ 등
+            "BIZ",  # APActBIZ, ADActBIZ, APActBiz 등
         ],
         # DEM/DAQ: 데이터 액세스 클래스 (DEM 또는 DQM으로 끝남)
         "DEM_DAQ": [
@@ -225,24 +225,23 @@ class AnyframeSarangOnEndpointExtraction(EndpointExtractionStrategy):
         all_annotations = cls.annotations + method.annotations
         annotation_lower = [ann.lower() for ann in all_annotations]
 
-        # Controller 레이어
-        if any(
-            "ServiceIdMapping" in ann for ann in annotation_lower
-        ):
+        # SVC 레이어 (ServiceIdMapping 어노테이션)
+        if any("serviceidmapping" in ann for ann in annotation_lower):
             return "SVC"
 
-        # Service 레이어
-        if any("Service" in ann for ann in annotation_lower):
+        # SVCImpl 레이어 (Service 어노테이션)
+        if any("service" in ann for ann in annotation_lower):
             return "SVCImpl"
 
-        if any("Repository" in ann for ann in annotation_lower):
+        # DEM_DAQ 레이어 (Repository 어노테이션)
+        if any("repository" in ann for ann in annotation_lower):
             return "DEM_DAQ"
 
-        # 클래스명 패턴 기반 분류
-        class_name = cls.name
+        # 클래스명 패턴 기반 분류 (대소문자 무시)
+        class_name_upper = cls.name.upper()
         for layer, patterns in self.LAYER_PATTERNS.items():
             for pattern in patterns:
-                if pattern in class_name:
+                if pattern.upper() in class_name_upper:
                     return layer
 
         # 패키지 기반 분류
