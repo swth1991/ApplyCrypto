@@ -138,7 +138,8 @@ class ThreeStepBankaCodeGenerator(ThreeStepCodeGenerator):
 
         # source_files: BIZ=메서드만, 나머지=전체
         add_line_num: bool = (
-            self.config and self.config.generate_type != "full_source"
+            self.config
+            and self.config.generate_type not in ("full_source", "method")
         )
         source_files_str = self._build_optimized_source_files(
             modification_context.file_paths,

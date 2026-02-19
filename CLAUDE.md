@@ -69,6 +69,7 @@ CLI Layer → Configuration → Collection → Parsing → Analysis → Modifica
 4. **Parsing Layer** (`src/parser/`) → Java AST (tree-sitter), XML Mappers, Call Graph (NetworkX)
 5. **Analysis Layer** (`src/analyzer/`) → DB access patterns via call graph traversal
 6. **Modification Layer** (`src/modifier/`) → LLM-based code generation and patching
+   - **Code Patcher** (`src/modifier/code_patcher/`): `FullSourceCodePatcher` (전체 파일), `DiffCodePatcher` (diff 기반), `PartCodePatcher` (부분), `MethodCodePatcher` (메서드 단위)
 7. **LLM Layer** (`src/modifier/llm/`) → Provider abstraction (WatsonX, OpenAI, Claude)
 8. **Persistence Layer** (`src/persistence/`) → JSON serialization and caching
 9. **Generator Layer** (`src/generator/`) → Report generation and output formatting
@@ -86,11 +87,12 @@ CLI Layer → Configuration → Collection → Parsing → Analysis → Modifica
   - `ThreeStepBankaCodeGenerator`: BNK 온라인 전용 (Phase 1 VO 제외, Phase 2 BIZ 메서드만 추출)
 - `BaseMultiStepCodeGenerator`: 다단계 코드 생성 베이스 (`src/modifier/code_generator/multi_step_base/`)
 - `ContextGenerator`: 컨텍스트 생성 전략 (`src/modifier/context_generator/`)
-  - `AnyframeContextGenerator`: import 기반 파일 그룹 생성 (`jdbc`, `jpa`)
+  - `JdbcContextGenerator`: import 기반 파일 그룹 생성 (`jdbc`)
   - `AnyframeBankaContextGenerator`: call_stack 기반 파일 그룹 생성 (`jdbc_banka`), `BaseContextGenerator` 직접 상속
+  - 기타: `MybatisContextGenerator` (`mybatis`), `MybatisCCSContextGenerator` (`mybatis_ccs`), `CCSBatchContextGenerator` (`ccs_batch`), `BNKBatchContextGenerator` (`bnk_batch`), `PerLayerContextGenerator` (default)
 
 **Factory Pattern** - 설정 기반 전략 생성:
-- `LLMFactory`, `EndpointExtractionStrategyFactory`, `SQLExtractorFactory`
+- `create_llm_provider()` (`llm_factory.py`), `EndpointExtractionStrategyFactory`, `SQLExtractorFactory`
 - `CodeGeneratorFactory`, `ContextGeneratorFactory`
 
 ### Configuration Schema
@@ -99,7 +101,7 @@ The `config.json` file drives the entire workflow. Key fields:
 
 | Field | Description |
 |-------|-------------|
-| `framework_type` | `SpringMVC`, `AnyframeSarangOn`, `AnyframeCCS`, `anyframe_ccs_batch`, `anyframe_banka`, `BatBanka` 등 |
+| `framework_type` | `SpringMVC`, `AnyframeSarangOn`, `AnyframeOld`, `AnyframeEtc`, `AnyframeCCS`, `SpringBatQrts`, `AnyframeBatSarangOn`, `AnyframeBatEtc`, `anyframe_ccs_batch`, `BatBanka`, `anyframe_banka` |
 | `sql_wrapping_type` | `mybatis`, `mybatis_ccs`, `ccs_batch`, `bnk_batch`, `jdbc`, `jdbc_banka`, `jpa` |
 | `modification_type` | `ControllerOrService`, `ServiceImplOrBiz`, `TypeHandler`, `TwoStep`, `ThreeStep` |
 | `llm_provider` | `watsonx_ai`, `watsonx_ai_on_prem`, `claude_ai`, `openai`, `mock` |
@@ -216,11 +218,13 @@ Phase 1에서 VO 파일과 SQL 쿼리의 필드 매핑을 먼저 분석하여 Pl
 
 `*_name_only.md` 접미사: 이름 필드만 처리하는 경량 버전 (CCS, CCS Batch, BNK Batch 각각 존재)
 
+`execution_template_banka_method.md`: BNK 온라인 메서드 단위 코드 수정 전용 템플릿
+
 주요 템플릿 변수: `{{source_code}}`, `{{table_info}}`, `{{call_chain}}`, `{{mapping_info}}`
 
 ### Error Handling
 - 커스텀 예외: `ConfigurationError`, `CodeGeneratorError`, `PersistenceError`
-- 로거: `logging.getLogger("applycrypto")`
+- 로거: `logging.getLogger("applycrypto.*")` 네임스페이스 또는 `logging.getLogger(__name__)` 혼용
 - 검증: 모든 설정과 데이터 모델에 Pydantic 스키마 사용
 
 ## Gotchas
