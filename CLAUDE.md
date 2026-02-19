@@ -99,7 +99,7 @@ The `config.json` file drives the entire workflow. Key fields:
 
 | Field | Description |
 |-------|-------------|
-| `framework_type` | `SpringMVC`, `AnyframeSarangOn`, `AnyframeCCS`, `anyframe_ccs_batch` 등 |
+| `framework_type` | `SpringMVC`, `AnyframeSarangOn`, `AnyframeCCS`, `anyframe_ccs_batch`, `anyframe_banka`, `BatBanka` 등 |
 | `sql_wrapping_type` | `mybatis`, `mybatis_ccs`, `ccs_batch`, `bnk_batch`, `jdbc`, `jdbc_banka`, `jpa` |
 | `modification_type` | `ControllerOrService`, `ServiceImplOrBiz`, `TypeHandler`, `TwoStep`, `ThreeStep` |
 | `llm_provider` | `watsonx_ai`, `watsonx_ai_on_prem`, `claude_ai`, `openai`, `mock` |
@@ -201,45 +201,22 @@ Phase 1에서 VO 파일과 SQL 쿼리의 필드 매핑을 먼저 분석하여 Pl
 4. `config.example.json`에 새 옵션 문서화
 
 ### Template System
-각 코드 생성기는 Jinja2 템플릿을 사용합니다:
-```
-src/modifier/code_generator/
-├── multi_step_base/
-│   └── base_multi_step_code_generator.py  # 다단계 코드 생성 베이스 클래스
-├── two_step_type/
-│   ├── planning_template.md
-│   └── execution_template.md
-└── three_step_type/
-    ├── data_mapping_template.md            # Phase 1: 기본 VO/SQL 매핑
-    ├── data_mapping_template_ccs.md        # Phase 1: CCS 전용
-    ├── data_mapping_template_ccs_batch.md      # Phase 1: CCS Batch 전용
-    ├── data_mapping_template_ccs_batch_name_only.md  # Phase 1: CCS Batch 이름만
-    ├── data_mapping_template_ccs_name_only.md  # Phase 1: CCS 이름만
-    ├── planning_template.md                # Phase 2: 기본 수정 지침
-    ├── planning_template_ccs.md            # Phase 2: CCS 전용
-    ├── planning_template_ccs_batch.md          # Phase 2: CCS Batch 전용
-    ├── planning_template_ccs_batch_name_only.md  # Phase 2: CCS Batch 이름만
-    ├── planning_template_ccs_name_only.md  # Phase 2: CCS 이름만
-    ├── execution_template_full.md          # Phase 3: 전체 소스 생성
-    ├── execution_template_diff.md          # Phase 3: diff 형식 생성
-    ├── execution_template_ccs.md           # Phase 3: CCS 전용
-    ├── execution_template_ccs_batch.md         # Phase 3: CCS Batch 전용
-    ├── execution_template_ccs_batch_name_only.md  # Phase 3: CCS Batch 이름만
-    ├── execution_template_ccs_name_only.md # Phase 3: CCS 이름만
-    ├── data_mapping_template_bnk_batch.md          # Phase 1: BNK Batch 전용
-    ├── data_mapping_template_bnk_batch_name_only.md # Phase 1: BNK Batch 이름만
-    ├── planning_template_bnk_batch.md              # Phase 2: BNK Batch 전용
-    ├── planning_template_bnk_batch_name_only.md    # Phase 2: BNK Batch 이름만
-    ├── execution_template_bnk_batch.md             # Phase 3: BNK Batch 전용
-    ├── execution_template_bnk_batch_name_only.md   # Phase 3: BNK Batch 이름만
-    └── vo_extraction_template.md           # VO 추출 보조 템플릿
-```
+각 코드 생성기는 Jinja2 템플릿을 사용합니다. 템플릿은 `src/modifier/code_generator/` 하위에 위치합니다.
+
+**디렉토리 구조:**
+- `two_step_type/` — TwoStep 전용 (planning, execution)
+- `three_step_type/` — ThreeStep 전용 (data_mapping, planning, execution + 보조 vo_extraction)
+
+**Three-step 템플릿 명명 규칙:**
+| Phase | 기본 | CCS | CCS Batch | BNK Batch |
+|-------|------|-----|-----------|-----------|
+| Phase 1 | `data_mapping_template.md` | `*_ccs.md` | `*_ccs_batch.md` | `*_bnk_batch.md` |
+| Phase 2 | `planning_template.md` | `*_ccs.md` | `*_ccs_batch.md` | `*_bnk_batch.md` |
+| Phase 3 | `execution_template_full.md` / `*_diff.md` | `*_ccs.md` | `*_ccs_batch.md` | `*_bnk_batch.md` |
+
+`*_name_only.md` 접미사: 이름 필드만 처리하는 경량 버전 (CCS, CCS Batch, BNK Batch 각각 존재)
 
 주요 템플릿 변수: `{{source_code}}`, `{{table_info}}`, `{{call_chain}}`, `{{mapping_info}}`
-
-**CCS 프로젝트용 템플릿**: `*_ccs.md` 접미사가 붙은 템플릿은 AnyframeCCS 프레임워크 전용이며, `*_ccs_name_only.md`는 이름 필드만 처리하는 경량 버전입니다.
-
-**BNK Batch 프로젝트용 템플릿**: `*_bnk_batch.md` 접미사가 붙은 템플릿은 BNK 배치 프레임워크 전용입니다.
 
 ### Error Handling
 - 커스텀 예외: `ConfigurationError`, `CodeGeneratorError`, `PersistenceError`
@@ -252,6 +229,8 @@ src/modifier/code_generator/
 - **CCS 프로젝트**: `ccs_prefix` 설정 시 `name_only` 모드와 함께 사용해야 할 수 있음
 - **캐시 문제**: 분석 결과가 이상할 경우 `python main.py clear`로 캐시 초기화
 - **tree-sitter 버전**: Python 3.13에서는 tree-sitter 0.22+ 권장
+- **layer_files 키는 소문자**: `db_access_analyzer._find_upper_layer_files()`에서 `classify_layer()` 반환값을 `.lower()`로 변환하여 저장합니다. `"SVCImpl"` → `"svcimpl"`, `"SVC"` → `"svc"`, `"DEM_DAQ"` → `"dem_daq"` 등. Context Generator에서 `layer_files.get("svc", [])`만 호출하면 `"svcimpl"` 키의 파일은 누락되므로 별도 병합이 필요합니다. 단, SQL Extractor가 직접 추가하는 키(`"Repository"`, `"bat"`, `"batvo"`)는 소문자 변환 없이 원본 그대로 저장됩니다.
+- **parse_file의 remove_comments 플래그**: `JavaASTParser.parse_file(path, remove_comments=False)`로 호출하면 주석 제거 없이 파싱하여 원본 라인 번호를 보존합니다. `remove_comments=False`일 때는 캐시를 사용하지 않습니다 (키 충돌 방지). ThreeStepBankaCodeGenerator의 BIZ 메서드 추출에서 사용합니다.
 
 ## Korean Language Support
 

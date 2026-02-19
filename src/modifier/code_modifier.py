@@ -19,7 +19,7 @@ from models.table_access_info import TableAccessInfo
 from .code_generator.code_generator_factory import CodeGeneratorFactory
 from .code_generator.base_code_generator import BaseCodeGenerator
 from .context_generator.context_generator_factory import ContextGeneratorFactory
-from .code_patcher import DiffCodePatcher, FullSourceCodePatcher, PartCodePatcher
+from .code_patcher import DiffCodePatcher, FullSourceCodePatcher, MethodCodePatcher, PartCodePatcher
 from .error_handler import ErrorHandler
 from .llm.llm_factory import create_llm_provider
 from .llm.llm_provider import LLMProvider
@@ -213,6 +213,10 @@ class CodeModifier:
             # 패치 적용
             if self.config.generate_type == "full_source":
                 patcher = FullSourceCodePatcher(
+                    project_root=self.target_project, config=self.config
+                )
+            elif self.config.generate_type == "method":
+                patcher = MethodCodePatcher(
                     project_root=self.target_project, config=self.config
                 )
             elif self.config.generate_type == "part":
