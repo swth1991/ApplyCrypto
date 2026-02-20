@@ -26,6 +26,7 @@ except ImportError:
 from parser.call_graph_builder import CallGraphBuilder
 from parser.java_ast_parser import JavaASTParser
 from parser.xml_mapper_parser import XMLMapperParser
+from parser.inherit_graph_builder import InheritGraphBuilder
 
 from analyzer.db_access_analyzer import DBAccessAnalyzer
 from collector.source_file_collector import SourceFileCollector
@@ -165,6 +166,12 @@ class CLIController:
             "--debug",
             action="store_true",
             help="디버그 모드 활성화 (Diff 파일 저장 등)",
+        )
+        modify_parser.add_argument(
+            "--target-table",
+            type=str,
+            default=None,
+            help="특정 대상 테이블만 처리합니다",
         )
 
 
@@ -424,9 +431,8 @@ class CLIController:
             # EndpointExtractionStrategy 생성
             from parser.endpoint_strategy import EndpointExtractionStrategyFactory
 
-            framework_type = config.framework_type if hasattr(config, "framework_type") else "SpringMVC"
             endpoint_strategy = EndpointExtractionStrategyFactory.create(
-                framework_type=framework_type,
+                config=config,
                 java_parser=java_parser,
                 cache_manager=cache_manager,
             )
@@ -526,6 +532,23 @@ class CLIController:
             )
 
             # Call Graph 저장 (endpoint별 call tree 포함)
+            
+            # Inherit Map 생성 및 저장
+            inherit_graph_builder = InheritGraphBuilder(
+                file_to_classes_map=call_graph_builder.file_to_classes_map,
+                class_name_to_info=call_graph_builder.class_name_to_info
+            )
+            inheritance_map = inherit_graph_builder.get_inheritance_map()
+            
+            persistence_manager.save_to_file(
+                # json 저장을 위해 dict 형태로 변환 (InheritNode는 Pydantic model이므로 model_dump 또는 dict 사용)
+                # 하지만 persistence_manager.save_to_file은 보통 객체의 to_dict()나 dict를 기대하거나, 
+                # 또는 Pydantic 모델 리스트/딕셔너리를 처리해 줄 수 있음.
+                # InheritNode는 dict()로 변환해서 저장하는 것이 안전함.
+                {k: v.dict() for k, v in inheritance_map.items()},
+                "inherit_graph.json"
+            )
+
             call_graph_data = {
                 "endpoints": [
                     ep.to_dict() if hasattr(ep, "to_dict") else str(ep)
@@ -1200,10 +1223,6 @@ class CLIController:
             persistence_manager = DataPersistenceManager(target_project)
 
 
-            # modification_type에 따른 분기 처리
-            if config.modification_type == "TypeHandler":
-                self.logger.info("Type Handler 모드로 수정을 진행합니다.")
-                return self._handle_modify_with_type_handler(args, config)
 
             # Call Chain 모드 분기 (기존 호환성을 위해 유지)
             # TODO: call_chain은 향후 modification_type으로 통합 예정
@@ -1268,6 +1287,9 @@ class CLIController:
             modification_logs = []
 
             for table_info in table_access_info_list:
+                if args.target_table and table_info.table_name.lower() != args.target_table.lower():
+                    continue
+
                 self.logger.info(f"\n  테이블 '{table_info.table_name}' 처리 중...")
 
                 # 트래킹 시작 (테이블 단위)
@@ -1384,40 +1406,7 @@ class CLIController:
             self.logger.error(f"오류: {e}")
             return 1
 
-    def _handle_modify_with_type_handler(
-        self, args: argparse.Namespace, config: Configuration
-    ) -> int:
-        """
-        Type Handler 방식으로 암복호화를 적용하는 핸들러
 
-        Type Handler를 사용하면 Java 비즈니스 로직을 직접 수정하지 않고,
-        MyBatis TypeHandler 클래스를 생성하여 XML 매퍼에 등록합니다.
-
-        Args:
-            args: 파싱된 인자
-            config: 설정 객체
-
-        Returns:
-            int: 종료 코드
-        """
-        try:
-            from generator.type_handler_generator import TypeHandlerGenerator
-
-            self.logger.info("Type Handler Generator 초기화...")
-            generator = TypeHandlerGenerator(config)
-
-            return generator.execute(dry_run=args.dry_run, apply_all=True)
-
-        except ImportError as e:
-            self.logger.error(f"Type Handler Generator 모듈을 로드할 수 없습니다: {e}")
-            self.logger.error(
-                f"오류: Type Handler Generator 모듈을 로드할 수 없습니다: {e}"
-            )
-            return 1
-        except Exception as e:
-            self.logger.exception(f"Type Handler 수정 중 오류: {e}")
-            self.logger.error(f"오류: {e}")
-            return 1
 
     def _handle_modify_with_call_chain(
         self, args: argparse.Namespace, config: Configuration

@@ -33,9 +33,6 @@ class AccessTable(BaseModel):
     columns: List[Union[str, ColumnDetail]] = Field(..., description="컬럼 목록")
 
 
-class TypeHandlerConfig(BaseModel):
-    package: str = Field(..., description="Type Handler 패키지 이름")
-    output_dir: str = Field(..., description="Type Handler 출력 디렉터리")
 
 
 class MultiStepExecutionConfig(BaseModel):
@@ -110,9 +107,7 @@ class ThreeStepConfig(BaseModel):
 
 class Configuration(BaseModel):
     target_project: str = Field(..., description="대상 프로젝트 루트 경로")
-    type_handler: Optional[TypeHandlerConfig] = Field(
-        None, description="Type Handler 설정"
-    )
+
     source_file_types: List[str] = Field(
         ..., description="수집할 소스 파일 확장자 목록"
     )
@@ -171,6 +166,7 @@ class Configuration(BaseModel):
         description="CCS 프로젝트 prefix. 유틸리티 클래스 결정에 사용 "
         "(BC→BCCommUtil, CP→CPCmpgnUtil, CR→CRCommonUtil)",
     )
+    app_key: Optional[str] = Field(None, description="애플리케이션 키")
 
     def get_table_names(self) -> List[str]:
         """

@@ -19,6 +19,7 @@ except ImportError:
 from models.call_relation import CallRelation
 from models.endpoint import Endpoint
 from models.method import Method
+
 from persistence.cache_manager import CacheManager
 
 from .java_ast_parser import ClassInfo, JavaASTParser
@@ -118,12 +119,13 @@ class CallGraphBuilder:
         # 모든 Java 파일 파싱
         all_classes: List[ClassInfo] = []
         for file_path in java_files:
-            tree, error = self.java_parser.parse_file(file_path)
+            classes, error = self.java_parser.get_classes(file_path)
             if error:
                 self.logger.warning(f"파일 파싱 실패: {file_path} - {error}")
                 continue
 
-            classes = self.java_parser.extract_class_info(tree, file_path)
+            # classes는 get_classes에서 이미 추출된 리스트
+            
             all_classes.extend(classes)
 
             # 파일 경로 -> 클래스 정보 매핑 저장 (재사용용)
@@ -362,6 +364,19 @@ class CallGraphBuilder:
                 "EndpointExtractionStrategy가 설정되지 않아 엔드포인트를 추출할 수 없습니다."
             )
 
+        # 인터페이스 구현체 매핑 미리 생성 (Inverted Index)
+        # full_map: 패키지가 포함된 인터페이스 이름 -> 구현 클래스 목록
+        # simple_map: 단순 인터페이스 이름 -> 구현 클래스 목록
+        full_interface_map = defaultdict(list)
+        simple_interface_map = defaultdict(list)
+
+        for cls in all_classes:
+            for interface_name in cls.interfaces:
+                if "." in interface_name:
+                    full_interface_map[interface_name].append(cls)
+                else:
+                    simple_interface_map[interface_name].append(cls)
+
         # 인터페이스 엔드포인트에 대한 구현 클래스의 call relation 추가
         for endpoint in self.endpoints:
             endpoint_class_name = endpoint.class_name
@@ -372,89 +387,87 @@ class CallGraphBuilder:
                 endpoint_class_info = self.class_name_to_info[endpoint_class_name]
                 
                 if endpoint_class_info.is_interface_class:
-                    # 해당 인터페이스를 구현하는 클래스 찾기
-                    for impl_cls in all_classes:
-                        # 구현 클래스의 interfaces 목록에 엔드포인트 인터페이스가 있는지 확인
-                        interface_found = False
-                        for interface_name in impl_cls.interfaces:
-                            # 단순 이름 비교
-                            if interface_name == endpoint_class_name:
-                                interface_found = True
-                                break
-                            # 패키지 포함 전체 이름 비교
-                            if "." in interface_name:
-                                simple_interface_name = interface_name.split(".")[-1]
-                                if simple_interface_name == endpoint_class_name:
-                                    interface_found = True
-                                    break
-                            # endpoint_class_name이 패키지 포함 전체 이름인 경우
-                            if "." in endpoint_class_name:
-                                simple_endpoint_name = endpoint_class_name.split(".")[-1]
-                                if interface_name == simple_endpoint_name or interface_name == endpoint_class_name:
-                                    interface_found = True
-                                    break
+                    # 해당 인터페이스를 구현하는 클래스 찾기 (최적화된 방식 - 원래 로직 복원)
+                    # 해당 인터페이스를 구현하는 클래스 찾기 (최적화된 방식 - 원래 로직 복원)
+                    # ClassInfo 객체는 unhashable하므로 set 대신 dict를 사용하여 중복 제거
+                    found_impl_classes_map = {}
+                    
+                    endpoint_simple_name = endpoint_class_name.split(".")[-1]
+                    
+                    # 1. 전체 이름 일치 확인 (패키지 포함)
+                    if endpoint_class_name in full_interface_map:
+                        for cls in full_interface_map[endpoint_class_name]:
+                            # 식별자로 full name 사용
+                            key = f"{cls.package}.{cls.name}" if cls.package else cls.name
+                            found_impl_classes_map[key] = cls
                         
-                        if interface_found:
-                            # 구현 클래스의 메서드 시그니처 구성
-                            impl_method_signature = f"{impl_cls.name}.{endpoint_method_name}"
+                    # 2. 단순 이름 일치 확인 (원래 단순 이름으로 선언된 인터페이스만)
+                    if endpoint_simple_name in simple_interface_map:
+                        for cls in simple_interface_map[endpoint_simple_name]:
+                            key = f"{cls.package}.{cls.name}" if cls.package else cls.name
+                            found_impl_classes_map[key] = cls
+                    
+                    for impl_cls in found_impl_classes_map.values():
+                        # 구현 클래스의 메서드 시그니처 구성
+                        impl_method_signature = f"{impl_cls.name}.{endpoint_method_name}"
+                        
+                        # 구현 클래스의 메서드가 실제로 존재하는지 확인
+                        method_exists = False
+                        for method in impl_cls.methods:
+                            if method.name == endpoint_method_name:
+                                method_exists = True
+                                break
+                        
+                        if not method_exists:
+                            continue
+                        
+                        # endpoint를 caller로, 구현 클래스 메서드를 callee로 하는 새로운 relation 추가
+                        # endpoint 노드가 없으면 추가
+                        if endpoint.method_signature not in self.call_graph:
+                            # 엔드포인트 메서드의 메타데이터 가져오기 또는 생성
+                            endpoint_metadata = self.method_metadata.get(
+                                endpoint.method_signature,
+                                {
+                                    "class_name": endpoint.class_name,
+                                    "file_path": endpoint.file_path,
+                                    "layer": "Endpoint",
+                                }
+                            )
+                            self.call_graph.add_node(
+                                endpoint.method_signature,
+                                class_name=endpoint_metadata.get("class_name", endpoint.class_name),
+                                file_path=endpoint_metadata.get("file_path", endpoint.file_path),
+                                layer=endpoint_metadata.get("layer", "Endpoint"),
+                            )
+                        
+                        # 구현 클래스 메서드 노드가 없으면 추가
+                        if impl_method_signature not in self.call_graph:
+                            impl_metadata = self.method_metadata.get(
+                                impl_method_signature,
+                                {
+                                    "class_name": impl_cls.name,
+                                    "file_path": impl_cls.file_path,
+                                    "layer": "Unknown",
+                                }
+                            )
+                            self.call_graph.add_node(
+                                impl_method_signature,
+                                class_name=impl_metadata.get("class_name", impl_cls.name),
+                                file_path=impl_metadata.get("file_path", impl_cls.file_path),
+                                layer=impl_metadata.get("layer", "Unknown"),
+                            )
+                        
+                        # 이미 존재하는 relation인지 확인 후 추가
+                        if not self.call_graph.has_edge(endpoint.method_signature, impl_method_signature):
+                            self.call_graph.add_edge(
+                                endpoint.method_signature,
+                                impl_method_signature
+                            )
                             
-                            # 구현 클래스의 메서드가 실제로 존재하는지 확인
-                            method_exists = False
-                            for method in impl_cls.methods:
-                                if method.name == endpoint_method_name:
-                                    method_exists = True
-                                    break
-                            
-                            if not method_exists:
-                                continue
-                            
-                            # endpoint를 caller로, 구현 클래스 메서드를 callee로 하는 새로운 relation 추가
-                            # endpoint 노드가 없으면 추가
-                            if endpoint.method_signature not in self.call_graph:
-                                # 엔드포인트 메서드의 메타데이터 가져오기 또는 생성
-                                endpoint_metadata = self.method_metadata.get(
-                                    endpoint.method_signature,
-                                    {
-                                        "class_name": endpoint.class_name,
-                                        "file_path": endpoint.file_path,
-                                        "layer": "Endpoint",
-                                    }
-                                )
-                                self.call_graph.add_node(
-                                    endpoint.method_signature,
-                                    class_name=endpoint_metadata.get("class_name", endpoint.class_name),
-                                    file_path=endpoint_metadata.get("file_path", endpoint.file_path),
-                                    layer=endpoint_metadata.get("layer", "Endpoint"),
-                                )
-                            
-                            # 구현 클래스 메서드 노드가 없으면 추가
-                            if impl_method_signature not in self.call_graph:
-                                impl_metadata = self.method_metadata.get(
-                                    impl_method_signature,
-                                    {
-                                        "class_name": impl_cls.name,
-                                        "file_path": impl_cls.file_path,
-                                        "layer": "Unknown",
-                                    }
-                                )
-                                self.call_graph.add_node(
-                                    impl_method_signature,
-                                    class_name=impl_metadata.get("class_name", impl_cls.name),
-                                    file_path=impl_metadata.get("file_path", impl_cls.file_path),
-                                    layer=impl_metadata.get("layer", "Unknown"),
-                                )
-                            
-                            # 이미 존재하는 relation인지 확인 후 추가
-                            if not self.call_graph.has_edge(endpoint.method_signature, impl_method_signature):
-                                self.call_graph.add_edge(
-                                    endpoint.method_signature,
-                                    impl_method_signature
-                                )
-                                
-                                self.logger.debug(
-                                    f"인터페이스 엔드포인트 연결 추가: "
-                                    f"{endpoint.method_signature} -> {impl_method_signature}"
-                                )
+                            self.logger.debug(
+                                f"인터페이스 엔드포인트 연결 추가: "
+                                f"{endpoint.method_signature} -> {impl_method_signature}"
+                            )
 
         return self.call_graph
 

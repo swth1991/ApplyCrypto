@@ -30,11 +30,11 @@ git diff [COMMIT_A] [COMMIT_B] | Set-Content -Encoding utf8 change.diff
 
 ## 2. Diff 적용 (Applying Diff)
 
-생성된 patch 파일을 적용할 때는 `git apply` 명령어를 사용합니다.
+생성된 patch 파일을 적용할 때는 `git apply` 명령어를 사용합니다. `--reject` flag 를 붙이면 conflict 나는 코드가 `.rej` 파일로 떨어짐.
 
 ### 기본 적용
 ```powershell
-git apply change.diff
+git apply --reject change.diff
 ```
 
 ### 공백 무시 및 오류 완화 옵션

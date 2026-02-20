@@ -72,6 +72,7 @@ class Method:
     method_calls: List[str] = field(default_factory=list)
     line_number: int = 0
     end_line_number: int = 0
+    body: Optional[str] = None
 
     def to_dict(self) -> dict:
         """딕셔너리 형태로 변환"""

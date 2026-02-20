@@ -17,6 +17,9 @@ from modifier.context_generator.ccs_batch_context_generator import (
 from modifier.context_generator.bnk_batch_context_generator import (
     BNKBatchContextGenerator,
 )
+from modifier.context_generator.typehandler_context_generator import (
+    TypehandlerContextGenerator,
+)
 
 
 class ContextGeneratorFactory:
@@ -46,6 +49,8 @@ class ContextGeneratorFactory:
             return AnyframeBankaContextGenerator(config, code_generator)
         elif config.sql_wrapping_type == "jdbc":
             return JdbcContextGenerator(config, code_generator)
+        if config.sql_wrapping_type == "mybatis" and config.modification_type == "TypeHandler":
+            return TypehandlerContextGenerator(config, code_generator)
         elif config.sql_wrapping_type == "mybatis":
             return MybatisContextGenerator(config, code_generator)
         elif config.sql_wrapping_type == "mybatis_ccs":
