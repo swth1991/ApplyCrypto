@@ -92,7 +92,7 @@ class MybatisCCSContextGenerator(MybatisContextGenerator):
         for suffix in self.IMPL_SUFFIXES:
             impl_class_name = class_name_without_prefix + suffix
             for file_path in target_files:
-                file_stem = os.path.splitext(os.path.basename(file_path))[0]
+                file_stem = Path(file_path).stem
                 if file_stem == impl_class_name:
                     logger.debug(f"CCS Impl 매칭: {class_name} -> {file_stem}")
                     return file_path
@@ -102,13 +102,13 @@ class MybatisCCSContextGenerator(MybatisContextGenerator):
             for suffix in self.IMPL_SUFFIXES:
                 impl_class_name = class_name + suffix
                 for file_path in target_files:
-                    file_stem = os.path.splitext(os.path.basename(file_path))[0]
+                    file_stem = Path(file_path).stem
                     if file_stem == impl_class_name:
                         return file_path
 
         # 3차: 정확히 일치하는 파일 찾기
         for file_path in target_files:
-            file_stem = os.path.splitext(os.path.basename(file_path))[0]
+            file_stem = Path(file_path).stem
             if file_stem == class_name or file_stem == class_name_without_prefix:
                 return file_path
 
@@ -213,9 +213,9 @@ class MybatisCCSContextGenerator(MybatisContextGenerator):
         self, import_statement: str, source_root: str
     ) -> Optional[str]:
         """import 문을 파일 경로로 변환합니다."""
-        relative_path = import_statement.replace(".", os.sep) + ".java"
-        full_path = os.path.join(source_root, relative_path)
-        return full_path if os.path.exists(full_path) else None
+        relative_path = import_statement.replace(".", "/") + ".java"
+        full_path = Path(source_root) / relative_path
+        return str(full_path) if full_path.exists() else None
 
     def _collect_svcutil_files(self, all_imports: set, source_root: str) -> List[str]:
         """
@@ -241,28 +241,6 @@ class MybatisCCSContextGenerator(MybatisContextGenerator):
                     break
 
         return svcutil_files
-
-    def _calculate_token_size(self, text: str) -> int:
-        """
-        텍스트의 토큰 크기를 계산합니다.
-
-        tiktoken 라이브러리가 있으면 정확히 계산하고,
-        없으면 문자 4개당 1토큰으로 근사합니다.
-
-        Args:
-            text: 토큰 크기를 계산할 텍스트
-
-        Returns:
-            int: 추정 토큰 수
-        """
-        try:
-            import tiktoken
-
-            encoder = tiktoken.encoding_for_model("gpt-4")
-            return len(encoder.encode(text))
-        except Exception:
-            # tiktoken 없으면 근사값 사용 (4문자 = 1토큰)
-            return len(text) // 4
 
     def _select_dvo_files_by_token_budget(
         self,
@@ -297,15 +275,6 @@ class MybatisCCSContextGenerator(MybatisContextGenerator):
                     if current_tokens + file_tokens <= max_tokens:
                         selected_files.append(matched)
                         current_tokens += file_tokens
-                        logger.debug(
-                            f"DVO 선택: {Path(matched).name} "
-                            f"({file_tokens:,} tokens, 누적: {current_tokens:,})"
-                        )
-                    else:
-                        logger.info(
-                            f"DVO 토큰 예산 초과로 제외: {Path(matched).name} "
-                            f"({file_tokens:,} tokens, 현재 누적: {current_tokens:,})"
-                        )
                 except Exception as e:
                     logger.warning(f"DVO 파일 읽기 실패: {matched} - {e}")
 
@@ -357,11 +326,6 @@ class MybatisCCSContextGenerator(MybatisContextGenerator):
             List[ModificationContext]: 생성된 context 목록
         """
         normalized = self._normalize_layer_files(layer_files)
-
-        logger.info(
-            f"MybatisCCSContextGenerator: 레이어 정규화 완료 "
-            f"({list(layer_files.keys())} -> {list(normalized.keys())})"
-        )
 
         all_batches: List[ModificationContext] = []
 
@@ -460,12 +424,6 @@ class MybatisCCSContextGenerator(MybatisContextGenerator):
                 continue
 
             ctx_files = context_groups.get(ctl_key, [])
-
-            logger.info(
-                f"Controller '{ctl_key}': "
-                f"{len(file_paths)}개 수정 대상, "
-                f"{len(ctx_files)}개 DVO context"
-            )
 
             batches = self.create_batches(
                 file_paths=file_paths,

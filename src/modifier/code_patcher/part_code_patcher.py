@@ -28,17 +28,8 @@ class PartCodePatcher(BaseCodePatcher):
         Apply Search/Replace blocks to a file.
         """
         try:
-            if not file_path.is_absolute():
-                logger.warning(
-                    f"Relative path passed: {file_path}. Converting to absolute."
-                )
-                file_path = self.project_root / file_path
-
-            file_path = file_path.resolve()
-
-            if not file_path.exists():
-                error_msg = f"File does not exist: {file_path}"
-                logger.error(error_msg)
+            file_path, error_msg = self._normalize_file_path(file_path)
+            if error_msg:
                 return False, error_msg
 
             # Parse patches from the modified_code string

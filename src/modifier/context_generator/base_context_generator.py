@@ -42,6 +42,16 @@ class BaseContextGenerator(ABC):
         """
         raise NotImplementedError
 
+    def _calculate_token_size(self, text: str) -> int:
+        """텍스트의 토큰 크기를 계산합니다."""
+        try:
+            import tiktoken
+
+            encoder = tiktoken.encoding_for_model("gpt-4")
+            return len(encoder.encode(text))
+        except Exception:
+            return len(text) // 4
+
     def create_batches(
         self,
         file_paths: List[str],

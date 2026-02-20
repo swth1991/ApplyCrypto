@@ -105,7 +105,7 @@ class BatchBaseContextGenerator(BaseContextGenerator):
             List[str]: 실제 사용되는 BATVO 파일 경로 목록
         """
         if not bat_imports:
-            logger.info("Import가 없어 모든 BATVO 파일을 포함합니다.")
+            logger.debug("Import가 없어 모든 BATVO 파일을 포함합니다.")
             return all_batvo_files
 
         import_class_names = {imp.split(".")[-1].lower() for imp in bat_imports}
@@ -240,11 +240,6 @@ class BatchBaseContextGenerator(BaseContextGenerator):
             List[ModificationContext]: 생성된 context 목록
         """
         normalized = self._normalize_layer_files(layer_files)
-
-        logger.info(
-            f"{self.__class__.__name__}: 레이어 정규화 완료 "
-            f"({list(layer_files.keys())} -> {list(normalized.keys())})"
-        )
 
         all_batches: List[ModificationContext] = []
 

@@ -90,14 +90,6 @@ class AnyframeBankaContextGenerator(BaseContextGenerator):
 
         # BIZ stem 필터 (Util 제외, 대소문자 무시)
         biz_files = [f for f in biz_files_raw if Path(f).stem.upper().endswith("BIZ")]
-        if len(biz_files) < len(biz_files_raw):
-            excluded = [
-                Path(f).name for f in biz_files_raw if not Path(f).stem.upper().endswith("BIZ")
-            ]
-            logger.info(
-                f"BIZ stem 필터: {len(biz_files_raw)} → {len(biz_files)}개 "
-                f"(제외: {', '.join(excluded[:5])}{'...' if len(excluded) > 5 else ''})"
-            )
 
         # SVC 분류
         svc_files_all = [
@@ -254,7 +246,6 @@ class AnyframeBankaContextGenerator(BaseContextGenerator):
             file_group_paths.extend(matched_biz_files)
 
             # DQM/DEM 파일 제외 (SQL 쿼리 접근 클래스이므로 수정 대상 아님)
-            before_filter = len(file_group_paths)
             file_group_paths = [
                 fp
                 for fp in file_group_paths
@@ -265,11 +256,6 @@ class AnyframeBankaContextGenerator(BaseContextGenerator):
                     or "/dem/" in fp
                 )
             ]
-            if len(file_group_paths) < before_filter:
-                logger.info(
-                    f"DQM/DEM 필터: {before_filter} → {len(file_group_paths)}개 "
-                    f"(수정 대상에서 제외)"
-                )
 
             # VO 선택: 그룹 내 파일 + DQM의 imports 기반
             all_imports_for_vo: set = set()
@@ -600,12 +586,6 @@ class AnyframeBankaContextGenerator(BaseContextGenerator):
             lines = all_lines[start_line - 1 : end_line]
             extracted_parts.append("".join(lines))
 
-        matched_names = [r[0] for r in method_ranges]
-        logger.info(
-            f"BIZ 토큰 추정 (메서드 레벨): {Path(file_path).name} -> "
-            f"{len(method_ranges)}개 메서드 ({', '.join(matched_names)})"
-        )
-
         return "\n\n".join(extracted_parts)
 
     def _read_full_file(self, file_path: str) -> str:
@@ -618,16 +598,6 @@ class AnyframeBankaContextGenerator(BaseContextGenerator):
             return ""
 
     # ========== VO 선택 관련 메서드 (AnyframeContextGenerator에서 복사) ==========
-
-    def _calculate_token_size(self, text: str) -> int:
-        """텍스트의 토큰 크기를 계산합니다."""
-        # try:
-        #     import tiktoken
-
-        #     encoder = tiktoken.encoding_for_model("gpt-4")
-        #     return len(encoder.encode(text))
-        # except Exception:
-        return len(text) // 4
 
     def _match_import_to_file_path(
         self, import_statement: str, target_files: List[str]
@@ -665,9 +635,6 @@ class AnyframeBankaContextGenerator(BaseContextGenerator):
                         break
 
             if match_found:
-                logger.debug(
-                    f"    ✓ Matched: {import_statement} -> {file_path_obj.name}"
-                )
                 return file_path
 
         return None
@@ -693,7 +660,6 @@ class AnyframeBankaContextGenerator(BaseContextGenerator):
         current_tokens = 0
 
         if not self.USE_TOKEN_LIMIT:
-            logger.info("VO 선택 (토큰 제한 없음 - 파일 읽기 생략)")
             for imp in all_imports:
                 matched = self._match_import_to_file_path(imp, vo_files)
                 if matched and matched not in selected_files:
@@ -701,7 +667,6 @@ class AnyframeBankaContextGenerator(BaseContextGenerator):
             logger.info(f"VO 파일 선택 완료: {len(selected_files)}개")
             return selected_files
 
-        logger.info("VO 선택 (토큰 제한 모드 - 파일 읽기 중...)")
         for imp in all_imports:
             matched = self._match_import_to_file_path(imp, vo_files)
             if matched and matched not in selected_files:
@@ -713,15 +678,7 @@ class AnyframeBankaContextGenerator(BaseContextGenerator):
                     if current_tokens + file_tokens <= max_tokens:
                         selected_files.append(matched)
                         current_tokens += file_tokens
-                        logger.debug(
-                            f"VO 선택: {Path(matched).name} "
-                            f"({file_tokens:,} tokens, 누적: {current_tokens:,})"
-                        )
                     else:
-                        logger.info(
-                            f"VO 토큰 예산 초과로 제외: {Path(matched).name} "
-                            f"({file_tokens:,} tokens, 누적: {current_tokens:,})"
-                        )
                         break
                 except Exception as e:
                     logger.warning(f"VO 파일 읽기 실패: {matched} - {e}")

@@ -1,5 +1,4 @@
 import logging
-import os
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -44,16 +43,6 @@ class AnyframeContextGenerator(BaseContextGenerator):
     # 토큰 제한 사용 여부 (False로 설정하면 모든 VO 파일 포함)
     USE_TOKEN_LIMIT = True  # Set to False to disable token limit
 
-    def _calculate_token_size(self, text: str) -> int:
-        """텍스트의 토큰 크기를 계산합니다."""
-        try:
-            import tiktoken
-
-            encoder = tiktoken.encoding_for_model("gpt-4")
-            return len(encoder.encode(text))
-        except Exception:
-            return len(text) // 4
-
     def _get_package_from_file(self, file_path: str) -> Optional[str]:
         """
         파일에서 package 선언을 추출합니다.
@@ -95,7 +84,6 @@ class AnyframeContextGenerator(BaseContextGenerator):
                     if package_path in file_path_normalized:
                         idx = file_path_normalized.rfind(package_path)
                         base_path = file_path_normalized[:idx]
-                        logger.debug(f"Base source path inferred: {base_path}")
                         return base_path
 
         logger.warning("Base source path를 추론할 수 없습니다")
@@ -189,16 +177,10 @@ class AnyframeContextGenerator(BaseContextGenerator):
             for imp in biz_imports:
                 # 타겟 DQM 발견
                 if self._match_import_to_file_path(imp, target_dqm_files):
-                    logger.debug(
-                        f"      ✓ Found target DQM in chain: {Path(biz_file).name}"
-                    )
                     return current_chain  # 전체 체인 반환!
 
                 # 타겟 DEM 발견
                 if self._match_import_to_file_path(imp, target_dem_files):
-                    logger.debug(
-                        f"      ✓ Found target DEM in chain: {Path(biz_file).name}"
-                    )
                     return current_chain  # 전체 체인 반환!
 
             # Same-package에서도 DQM/DEM 확인
@@ -206,18 +188,12 @@ class AnyframeContextGenerator(BaseContextGenerator):
                 biz_file, target_dqm_files
             )
             if same_package_dqm:
-                logger.debug(
-                    f"      ✓ Found target DQM (same-package) in chain: {Path(biz_file).name}"
-                )
                 return current_chain
 
             same_package_dem = self._find_same_package_references(
                 biz_file, target_dem_files
             )
             if same_package_dem:
-                logger.debug(
-                    f"      ✓ Found target DEM (same-package) in chain: {Path(biz_file).name}"
-                )
                 return current_chain
 
             # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -337,10 +313,6 @@ class AnyframeContextGenerator(BaseContextGenerator):
             # 단순 문자열 검색 (빠르고 정확!)
             if class_name in content:
                 referenced_files.append(file_path)
-                logger.debug(
-                    f"    ✓ Same-package reference: {class_name} "
-                    f"(in {Path(current_file).name})"
-                )
 
         return referenced_files
 
@@ -388,9 +360,6 @@ class AnyframeContextGenerator(BaseContextGenerator):
                         break
 
             if match_found:
-                logger.debug(
-                    f"    ✓ Matched: {import_statement} -> {file_path_obj.name}"
-                )
                 return file_path
 
         return None
@@ -421,8 +390,6 @@ class AnyframeContextGenerator(BaseContextGenerator):
 
         # ====== FAST PATH: 토큰 제한 없을 때 ======
         if not self.USE_TOKEN_LIMIT:
-            logger.info("VO 선택 (토큰 제한 없음 - 파일 읽기 생략)")
-
             for imp in all_imports:
                 matched = self._match_import_to_file_path(imp, vo_files)
                 if matched and matched not in selected_files:
@@ -432,8 +399,6 @@ class AnyframeContextGenerator(BaseContextGenerator):
             return selected_files
 
         # ====== SLOW PATH: 토큰 제한 있을 때 ======
-        logger.info("VO 선택 (토큰 제한 모드 - 파일 읽기 중...)")
-
         for imp in all_imports:
             matched = self._match_import_to_file_path(imp, vo_files)
             if matched and matched not in selected_files:
@@ -445,15 +410,7 @@ class AnyframeContextGenerator(BaseContextGenerator):
                     if current_tokens + file_tokens <= max_tokens:
                         selected_files.append(matched)
                         current_tokens += file_tokens
-                        logger.debug(
-                            f"VO 선택: {Path(matched).name} "
-                            f"({file_tokens:,} tokens, 누적: {current_tokens:,})"
-                        )
                     else:
-                        logger.info(
-                            f"VO 토큰 예산 초과로 제외: {Path(matched).name} "
-                            f"({file_tokens:,} tokens, 누적: {current_tokens:,})"
-                        )
                         # 예산 초과 시 조기 종료 (최적화)
                         break
                 except Exception as e:
@@ -547,13 +504,7 @@ class AnyframeContextGenerator(BaseContextGenerator):
                     interface_file_str = str(candidate_path)
                     if interface_file_str in svc_interface_files:
                         impl_to_interface[impl_file] = interface_file_str
-                        logger.debug(
-                            f"ServiceImpl 페어링: {impl_path.name} -> "
-                            f"{Path(interface_file_str).name}"
-                        )
                         break
-
-        logger.info(f"ServiceImpl-Interface 페어링: {len(impl_to_interface)}개")
 
         # ===== 핵심: ServiceImpl을 anchor로 사용 =====
         # Interface가 없는 Impl도 처리할 수 있도록
@@ -583,13 +534,6 @@ class AnyframeContextGenerator(BaseContextGenerator):
         dem_files = [x for x in dem_daq_files if "/dem/" in x or x.endswith("DEM.java")]
 
         logger.info(f"=== AnyframeContextGenerator Starting ===")
-        logger.info(f"SVC Implementation files (anchor): {len(svc_impl_files)}")
-        logger.info(f"SVC Interface files: {len(svc_interface_files)}")
-        logger.info(f"  - Impl-Interface pairs: {len(impl_to_interface)}")
-        logger.info(f"BIZ files: {len(biz_files)}")
-        logger.info(f"DQM files: {len(dqm_files)}")
-        logger.info(f"DEM files: {len(dem_files)}")
-        logger.info(f"VO files: {len(vo_files)}")
 
         if not anchor_files:
             logger.warning("SVC 앵커 파일이 없습니다.")

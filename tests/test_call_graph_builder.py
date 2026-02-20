@@ -6,6 +6,9 @@ Call Graph Builder의 기능을 테스트합니다.
 
 from parser.call_graph_builder import CallGraphBuilder
 from parser.java_ast_parser import JavaASTParser
+from parser.endpoint_strategy.endpoint_extraction_strategy_factory import (
+    EndpointExtractionStrategyFactory,
+)
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -36,8 +39,17 @@ def java_parser(cache_manager):
 
 @pytest.fixture
 def call_graph_builder(java_parser, cache_manager):
-    """Call Graph Builder 생성"""
-    return CallGraphBuilder(java_parser=java_parser, cache_manager=cache_manager)
+    """Call Graph Builder 생성 (EndpointExtractionStrategy 포함)"""
+    endpoint_strategy = EndpointExtractionStrategyFactory.create(
+        framework_type="SpringMVC",
+        java_parser=java_parser,
+        cache_manager=cache_manager,
+    )
+    return CallGraphBuilder(
+        java_parser=java_parser,
+        cache_manager=cache_manager,
+        endpoint_strategy=endpoint_strategy,
+    )
 
 
 @pytest.fixture
@@ -52,28 +64,28 @@ import org.springframework.beans.factory.annotation.Autowired;
 @RestController
 @RequestMapping("/api/users")
 public class UserController {
-    
+
     @Autowired
     private UserService userService;
-    
+
     @GetMapping("/{id}")
     public User getUser(@PathVariable Long id) {
         validateId(id);
         return userService.findById(id);
     }
-    
+
     @PostMapping
     public User createUser(@RequestBody User user) {
         validateUser(user);
         return userService.save(user);
     }
-    
+
     private void validateId(Long id) {
         if (id == null) {
             throw new IllegalArgumentException("ID cannot be null");
         }
     }
-    
+
     private void validateUser(User user) {
         if (user == null) {
             throw new IllegalArgumentException("User cannot be null");
@@ -98,14 +110,14 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 @Service
 public class UserService {
-    
+
     @Autowired
     private UserDAO userDAO;
-    
+
     public User findById(Long id) {
         return userDAO.findById(id);
     }
-    
+
     public User save(User user) {
         return userDAO.save(user);
     }
@@ -126,12 +138,12 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public class UserDAO {
-    
+
     public User findById(Long id) {
         // DB 조회 로직
         return null;
     }
-    
+
     public User save(User user) {
         // DB 저장 로직
         return null;
@@ -191,10 +203,10 @@ def test_layer_classification(
     layer = call_graph_builder._get_layer(service_method)
     assert layer == "Service"
 
-    # DAO 레이어 확인
+    # DAO 레이어 확인 (@Repository 어노테이션 → "Repository" 반환)
     dao_method = "UserDAO.findById"
     layer = call_graph_builder._get_layer(dao_method)
-    assert layer == "DAO"
+    assert layer == "Repository"
 
 
 def test_detect_circular_references(call_graph_builder, temp_dir):
@@ -204,15 +216,15 @@ def test_detect_circular_references(call_graph_builder, temp_dir):
 package com.example;
 
 public class CircularClass {
-    
+
     public void methodA() {
         methodB();
     }
-    
+
     public void methodB() {
         methodC();
     }
-    
+
     public void methodC() {
         methodA();  // 순환 참조
     }
@@ -265,7 +277,7 @@ def test_save_and_load_graph(
     assert graph_file.exists()
 
     # 새로운 빌더로 그래프 로드
-    new_builder = CallGraphBuilder(java_parser=java_parser, cache_manager=cache_manager)
+    new_builder = CallGraphBuilder(java_parser=call_graph_builder.java_parser, cache_manager=call_graph_builder.cache_manager)
     success = new_builder.load_graph(graph_file)
     assert success
     assert new_builder.call_graph is not None

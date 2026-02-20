@@ -104,7 +104,7 @@ def test_parse_file_not_found(java_parser, temp_dir):
 
     assert tree is None
     assert error is not None
-    assert "파일을 찾을 수 없습니다" in error
+    assert "파일을 읽을 수 없습니다" in error
 
 
 def test_extract_class_info(java_parser, sample_java_file):
@@ -179,16 +179,17 @@ def test_extract_method_calls(java_parser, sample_java_file):
     assert any("findById" in call for call in getUser_method.method_calls)
 
 
-def test_build_call_graph(java_parser, sample_java_file):
-    """Call Graph 생성 테스트"""
-    tree, _ = java_parser.parse_file(sample_java_file)
-    classes = java_parser.extract_class_info(tree, sample_java_file)
+def test_build_call_graph(java_parser, sample_java_file, cache_manager):
+    """Call Graph 생성 테스트 (CallGraphBuilder를 통해)"""
+    from parser.call_graph_builder import CallGraphBuilder
 
-    call_graph = java_parser.build_call_graph(classes)
+    builder = CallGraphBuilder(java_parser=java_parser, cache_manager=cache_manager)
+    graph = builder.build_call_graph([sample_java_file])
 
-    assert len(call_graph) > 0
-    # getUser 메서드가 호출하는 메서드 확인
-    assert any("getUser" in caller for caller in call_graph.keys())
+    assert graph is not None
+    assert len(graph.nodes()) > 0
+    # getUser 메서드가 그래프에 포함되어야 함
+    assert any("getUser" in node for node in graph.nodes())
 
 
 def test_extract_call_relations(java_parser, sample_java_file):

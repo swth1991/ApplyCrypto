@@ -22,9 +22,6 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-import tiktoken
-from jinja2 import Template
-
 from config.config_manager import (
     Configuration,
     MultiStepExecutionConfig,
@@ -37,7 +34,7 @@ from models.modification_plan import ModificationPlan
 from models.table_access_info import TableAccessInfo
 from modifier.llm.llm_provider import LLMProvider
 
-from ..base_code_generator import BaseCodeGenerator
+from ..base_code_generator import BaseCodeGenerator, CodeGeneratorError, render_template
 
 logger = logging.getLogger("applycrypto")
 
@@ -80,16 +77,6 @@ class BaseMultiStepCodeGenerator(BaseCodeGenerator):
 
         # 토큰 인코더 초기화
         self._init_token_encoder()
-
-    def _init_token_encoder(self) -> None:
-        """토큰 인코더를 초기화합니다."""
-        try:
-            self.token_encoder = tiktoken.encoding_for_model("gpt-4")
-        except Exception:
-            logger.warning(
-                "tiktoken을 사용할 수 없습니다. 간단한 토큰 추정을 사용합니다."
-            )
-            self.token_encoder = None
 
     def _init_output_directory(self) -> None:
         """
@@ -425,8 +412,7 @@ class BaseMultiStepCodeGenerator(BaseCodeGenerator):
 
     def _render_template(self, template_str: str, variables: Dict[str, Any]) -> str:
         """Jinja2 템플릿을 렌더링합니다."""
-        template = Template(template_str)
-        return template.render(**variables)
+        return render_template(template_str, variables)
 
     # ========== 파일 읽기 유틸리티 ==========
 
@@ -692,35 +678,6 @@ class BaseMultiStepCodeGenerator(BaseCodeGenerator):
             f"시도한 방법: index, exact, case_insensitive, signature, fuzzy"
         )
         return None, "failed"
-
-    # ========== 섹션 추출 유틸리티 ==========
-
-    def _extract_section(
-        self, content: str, start_marker: str, end_marker: str
-    ) -> str:
-        """
-        콘텐츠에서 두 마커 사이의 섹션을 추출합니다.
-
-        Args:
-            content: 전체 콘텐츠
-            start_marker: 시작 마커
-            end_marker: 종료 마커
-
-        Returns:
-            str: 추출된 섹션 (마커 제외)
-        """
-        start_idx = content.find(start_marker)
-        if start_idx == -1:
-            return ""
-
-        start_idx += len(start_marker)
-        end_idx = content.find(end_marker, start_idx)
-
-        if end_idx == -1:
-            # 종료 마커가 없으면 끝까지 추출
-            return content[start_idx:].strip()
-
-        return content[start_idx:end_idx].strip()
 
     # ========== JSON 추출 및 복구 유틸리티 ==========
 
@@ -1168,7 +1125,7 @@ class BaseMultiStepCodeGenerator(BaseCodeGenerator):
         )
 
         if not modifications:
-            raise Exception(
+            raise CodeGeneratorError(
                 "Execution 응답 파싱 실패: 유효한 수정 블록을 찾을 수 없습니다."
             )
 

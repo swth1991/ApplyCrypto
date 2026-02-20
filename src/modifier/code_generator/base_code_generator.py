@@ -47,18 +47,18 @@ class BaseCodeGenerator(ABC):
     def __init__(
         self,
         llm_provider: LLMProvider,
+        config: Configuration,
         prompt_cache: Dict[str, Dict[str, Any]] = None,
         template_path: Optional[Path] = None,
-        config: Optional[Configuration] = None,
     ):
         """
         BaseCodeGenerator 초기화
 
         Args:
             llm_provider: LLM 프로바이더
+            config: 설정 객체
             prompt_cache: 프롬프트 캐시 저장소 (선택적)
             template_path: 템플릿 파일 경로
-            config: 설정 객체 (선택적)
         """
         self.llm_provider = llm_provider
         self._prompt_cache = prompt_cache if prompt_cache is not None else {}
@@ -90,11 +90,14 @@ class BaseCodeGenerator(ABC):
         if not self.template_path.exists():
             raise FileNotFoundError(f"Please define {self.template_path.name} under {self.template_path.parent} dir")
 
-        # 토큰 인코더 초기화 (GPT-4용)
+        # 토큰 인코더 초기화
+        self._init_token_encoder()
+
+    def _init_token_encoder(self) -> None:
+        """토큰 인코더를 초기화합니다."""
         try:
             self.token_encoder = tiktoken.encoding_for_model("gpt-4")
         except Exception:
-            # tiktoken이 없거나 모델을 찾을 수 없는 경우 간단한 추정 사용
             logger.warning(
                 "tiktoken을 사용할 수 없습니다. 간단한 토큰 추정을 사용합니다."
             )
@@ -141,7 +144,7 @@ class BaseCodeGenerator(ABC):
             with open(path_obj, "r", encoding="utf-8") as f:
                 lines = f.readlines()
 
-            if self.config and self.config.generate_type == 'full_source':
+            if self.config.generate_type == 'full_source':
                 file_block = (
                     f"=== File: {path_obj.name} ===\n"
                     + "".join(lines)
@@ -161,6 +164,14 @@ class BaseCodeGenerator(ABC):
 
         source_files_str = "\n\n".join(snippets)
 
+        # context files (VO 등 참조 파일) 읽기
+        context_snippets = []
+        for ctx_path in (input_data.context_files or []):
+            ctx_obj = Path(ctx_path)
+            if ctx_obj.exists():
+                with open(ctx_obj, "r", encoding="utf-8") as f:
+                    context_snippets.append(f"=== File: {ctx_obj.name} ===\n{f.read()}")
+        context_files_str = "\n\n".join(context_snippets)
 
         # 배치 프롬프트 생성
         batch_variables = {
@@ -169,7 +180,7 @@ class BaseCodeGenerator(ABC):
             "source_files": source_files_str,
             "file_count": len(input_data.file_paths),
             "context_files": context_files_str,
-            "context_file_count": len(input_data.context_files),
+            "context_file_count": len(input_data.context_files or []),
             **(input_data.extra_variables or {}),
         }
 
@@ -212,7 +223,7 @@ class BaseCodeGenerator(ABC):
                 file_mapping = response.get("file_mapping", {})
 
             if not content:
-                raise Exception("LLM응답에 content가 없습니다.")
+                raise CodeGeneratorError("LLM 응답에 content가 없습니다.")
 
             content = content.strip()
 
@@ -220,7 +231,7 @@ class BaseCodeGenerator(ABC):
 
         except Exception as e:
             logger.error(f"LLM 응답 파싱 실패: {e}")
-            raise Exception(f"LLM 응답 파싱 실패: {e}")
+            raise CodeGeneratorError(f"LLM 응답 파싱 실패: {e}") from e
 
     def _parse_delimited_format(
         self, content: str, file_mapping: Dict[str, str]
@@ -293,7 +304,7 @@ class BaseCodeGenerator(ABC):
                 continue
 
         if not modifications:
-            raise Exception(
+            raise CodeGeneratorError(
                 "구분자 형식 파싱 실패: 유효한 수정 블록을 찾을 수 없습니다."
             )
 

@@ -156,8 +156,6 @@ class DBAccessAnalyzer:
 
         # 수집된 정보
         sql_queries: List[Dict[str, Any]] = []
-        interface_files: Set[str] = set()
-        dao_files: Set[str] = set()
         layer_files: Dict[str, Set[str]] = defaultdict(set)  # layer -> file_paths
         all_added_files: Set[str] = (
             set()
@@ -231,17 +229,12 @@ class DBAccessAnalyzer:
             return None
 
         # 모든 레이어 파일 경로 수집
-        all_access_files = set(interface_files)
-        all_access_files.update(dao_files)
+        all_access_files = set()
         for files in layer_files.values():
             all_access_files.update(files)
 
         # 레이어 결정 (가장 많은 파일이 있는 레이어)
         main_layer = self._determine_main_layer(layer_files)
-
-        # 칼럼 목록 추출 (SQL 쿼리에서 사용된 칼럼)
-        # 칼럼 목록 추출 (SQL 쿼리에서 사용된 칼럼) - 현재는 사용되지 않음 (디버깅용)
-        # self._extract_used_columns(sql_queries, table_name, columns)
 
         # 칼럼 정보 생성 (config.json에 설정된 모든 칼럼 포함)
         # SQL 쿼리에서 사용된 칼럼은 실제로 사용된 것으로 표시
@@ -383,25 +376,6 @@ class DBAccessAnalyzer:
             matching_queries.append(sql_query_info)
 
         return matching_queries
-
-    def _build_method_string(self, namespace: str, query_id: str) -> Optional[str]:
-        """
-        namespace의 class_name + sql query의 id로 method string 조합
-
-        Args:
-            namespace: Mapper namespace (예: "com.example.UserMapper")
-            query_id: SQL query의 id (예: "getUserById")
-
-        Returns:
-            Optional[str]: method string (예: "UserMapper.getUserById")
-        """
-        if not namespace or not query_id:
-            return None
-
-        # namespace에서 마지막 클래스명 추출
-        class_name = namespace.split(".")[-1]
-
-        return f"{class_name}.{query_id}"
 
     def _find_upper_layer_files(
         self, method_string: str
@@ -550,36 +524,3 @@ class DBAccessAnalyzer:
         # 파일 수가 가장 많은 레이어
         max_layer = max(layer_files.items(), key=lambda x: len(x[1]))
         return max_layer[0].capitalize() if max_layer[0] else "Unknown"
-
-    def _extract_used_columns(
-        self,
-        sql_queries: List[Dict[str, Any]],
-        table_name: str,
-        config_columns: Set[str],
-    ) -> Set[str]:
-        """
-        SQL 쿼리에서 사용된 칼럼 추출 (설정된 칼럼 중에서만)
-
-        Args:
-            sql_queries: SQL 쿼리 목록
-            table_name: 테이블명
-            config_columns: 설정된 칼럼 목록
-
-        Returns:
-            Set[str]: 사용된 칼럼 목록
-        """
-        used_columns = set()
-
-        for sql_query_info in sql_queries:
-            sql = sql_query_info.get("sql", "")
-            if not sql:
-                continue
-
-            # SQL에서 칼럼 추출
-            sql_columns = self.sql_extractor.extract_column_names(sql, table_name)
-            sql_columns_lower = {c.lower() for c in sql_columns}
-
-            # 설정된 칼럼과 교집합
-            used_columns.update(config_columns.intersection(sql_columns_lower))
-
-        return used_columns

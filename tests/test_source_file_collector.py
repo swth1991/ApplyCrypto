@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 
 from collector.source_file_collector import SourceFileCollector
-from config.config_manager import ConfigurationManager
+from config.config_manager import Configuration
 from models.source_file import SourceFile
 
 
@@ -58,26 +58,19 @@ def temp_project_dir():
 
 @pytest.fixture
 def config_file(temp_project_dir):
-    """임시 설정 파일을 생성하는 픽스처"""
-    config_data = {
-        "project_path": str(temp_project_dir),
-        "source_file_types": [".java", ".xml"],
-        "sql_wrapping_type": "mybatis",
-        "access_tables": [],
-    }
-
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-        json.dump(config_data, f, ensure_ascii=False, indent=2)
-        temp_path = f.name
-
-    yield temp_path
-
-    Path(temp_path).unlink(missing_ok=True)
+    """Configuration 객체를 생성하는 픽스처"""
+    return Configuration(
+        target_project=str(temp_project_dir),
+        source_file_types=[".java", ".xml"],
+        sql_wrapping_type="mybatis",
+        modification_type="ControllerOrService",
+        access_tables=[],
+    )
 
 
 @pytest.fixture
 def config_file_with_excludes(temp_project_dir):
-    """exclude 설정이 포함된 임시 설정 파일을 생성하는 픽스처"""
+    """exclude 설정이 포함된 Configuration 객체를 생성하는 픽스처"""
     # 테스트용 파일 생성
     (temp_project_dir / "test").mkdir(exist_ok=True)
     (temp_project_dir / "generated").mkdir(exist_ok=True)
@@ -94,34 +87,21 @@ def config_file_with_excludes(temp_project_dir):
         "public class MainTest {}"
     )
 
-    config_data = {
-        "project_path": str(temp_project_dir),
-        "source_file_types": [".java", ".xml"],
-        "sql_wrapping_type": "mybatis",
-        "access_tables": [],
-        "exclude_dirs": ["test", "generated"],
-        "exclude_files": ["*Test.java", "*_test.java"],
-    }
-
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-        json.dump(config_data, f, ensure_ascii=False, indent=2)
-        temp_path = f.name
-
-    yield temp_path
-
-    Path(temp_path).unlink(missing_ok=True)
+    return Configuration(
+        target_project=str(temp_project_dir),
+        source_file_types=[".java", ".xml"],
+        sql_wrapping_type="mybatis",
+        modification_type="ControllerOrService",
+        access_tables=[],
+        exclude_dirs=["test", "generated"],
+        exclude_files=["*Test.java", "*_test.java"],
+    )
 
 
 @pytest.fixture
-def config_manager(config_file):
-    """ConfigurationManager 인스턴스를 생성하는 픽스처"""
-    return ConfigurationManager(config_file)
-
-
-@pytest.fixture
-def collector(config_manager):
+def collector(config_file):
     """SourceFileCollector 인스턴스를 생성하는 픽스처"""
-    return SourceFileCollector(config_manager)
+    return SourceFileCollector(config_file)
 
 
 def test_collect_specified_extensions(collector):
@@ -247,25 +227,18 @@ def test_collect_all_method(collector):
 
 def test_invalid_project_path():
     """존재하지 않는 프로젝트 경로 처리 확인"""
-    config_data = {
-        "project_path": "/nonexistent/path",
-        "source_file_types": [".java"],
-        "sql_wrapping_type": "mybatis",
-        "access_tables": [],
-    }
+    config = Configuration(
+        target_project="/nonexistent/path",
+        source_file_types=[".java"],
+        sql_wrapping_type="mybatis",
+        modification_type="ControllerOrService",
+        access_tables=[],
+    )
 
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-        json.dump(config_data, f)
-        temp_path = f.name
+    collector = SourceFileCollector(config)
 
-    try:
-        config_manager = ConfigurationManager(temp_path)
-        collector = SourceFileCollector(config_manager)
-
-        with pytest.raises(ValueError, match="프로젝트 경로가 존재하지 않습니다"):
-            list(collector.collect())
-    finally:
-        Path(temp_path).unlink(missing_ok=True)
+    with pytest.raises(ValueError, match="프로젝트 경로가 존재하지 않습니다"):
+        list(collector.collect())
 
 
 def test_get_collected_count(collector):
@@ -311,9 +284,8 @@ def test_case_insensitive_extension_filtering(collector):
 
 
 def test_exclude_dirs_from_config(config_file_with_excludes):
-    """config.json의 exclude_dirs 설정이 적용되는지 확인"""
-    config_manager = ConfigurationManager(config_file_with_excludes)
-    collector = SourceFileCollector(config_manager)
+    """config의 exclude_dirs 설정이 적용되는지 확인"""
+    collector = SourceFileCollector(config_file_with_excludes)
 
     files = list(collector.collect())
     file_paths = [str(f.relative_path) for f in files]
@@ -329,9 +301,8 @@ def test_exclude_dirs_from_config(config_file_with_excludes):
 
 
 def test_exclude_files_from_config(config_file_with_excludes):
-    """config.json의 exclude_files 패턴이 적용되는지 확인"""
-    config_manager = ConfigurationManager(config_file_with_excludes)
-    collector = SourceFileCollector(config_manager)
+    """config의 exclude_files 패턴이 적용되는지 확인"""
+    collector = SourceFileCollector(config_file_with_excludes)
 
     files = list(collector.collect())
     file_paths = [str(f.relative_path) for f in files]
@@ -348,8 +319,7 @@ def test_exclude_files_from_config(config_file_with_excludes):
 
 def test_exclude_dirs_default_behavior(config_file):
     """기본 exclude_dirs가 여전히 작동하는지 확인"""
-    config_manager = ConfigurationManager(config_file)
-    collector = SourceFileCollector(config_manager)
+    collector = SourceFileCollector(config_file)
 
     files = list(collector.collect())
     file_paths = [str(f.path) for f in files]

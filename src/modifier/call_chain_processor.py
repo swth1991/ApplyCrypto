@@ -16,6 +16,7 @@ from models.diff_generator import DiffGeneratorInput
 from models.table_access_info import TableAccessInfo
 
 # from .diff_generator.call_chain import CallChainDiffGenerator  # TODO: call_chain은 향후 code_generator로 이동 예정
+from .code_generator.base_code_generator import CodeGeneratorError
 from .error_handler import ErrorHandler
 from .llm.llm_factory import create_llm_provider
 from .llm.llm_provider import LLMProvider
@@ -792,7 +793,7 @@ class CallChainProcessor:
             logger.warning(f"LLM 응답 content가 비어있음. 전체 응답: {content}")
 
         if not content:
-            raise Exception("LLM 응답에 content가 없습니다.")
+            raise CodeGeneratorError("LLM 응답에 content가 없습니다.")
 
         # JSON 코드 블록 제거
         original_content = content  # 디버깅용 원본 보관
@@ -926,19 +927,19 @@ class CallChainProcessor:
                                         data = json.loads(json_str)
                                         break
                         else:
-                            raise Exception(
+                            raise CodeGeneratorError(
                                 "JSON 파싱 실패: 올바른 JSON 형식이 아닙니다."
-                            )
+                            ) from e
                     else:
-                        raise Exception(
+                        raise CodeGeneratorError(
                             "JSON 파싱 실패: modifications를 찾을 수 없습니다."
-                        )
+                        ) from e
                 else:
-                    raise Exception(
+                    raise CodeGeneratorError(
                         "JSON 파싱 실패: modifications 키를 찾을 수 없습니다."
-                    )
+                    ) from e
             else:
-                raise Exception(f"JSON 파싱 실패: {e}")
+                raise CodeGeneratorError(f"JSON 파싱 실패: {e}") from e
 
         # modifications 추출
         modifications = data.get("modifications", [])

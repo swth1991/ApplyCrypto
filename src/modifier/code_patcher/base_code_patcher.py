@@ -29,6 +29,27 @@ class BaseCodePatcher(ABC):
         self.project_root = Path(project_root) if project_root else Path.cwd()
         self.config = config
 
+    def _normalize_file_path(
+        self, file_path: Path
+    ) -> Tuple[Path, Optional[str]]:
+        """파일 경로를 정규화하고 존재 여부를 검증합니다.
+
+        Returns:
+            Tuple[Path, Optional[str]]:
+                (정규화된 경로, 에러 메시지 또는 None)
+        """
+        if not file_path.is_absolute():
+            logger.warning(
+                f"Relative path passed: {file_path}. Converting to absolute."
+            )
+            file_path = self.project_root / file_path
+        file_path = file_path.resolve()
+        if not file_path.exists():
+            error_msg = f"File does not exist: {file_path}"
+            logger.error(error_msg)
+            return file_path, error_msg
+        return file_path, None
+
     @abstractmethod
     def apply_patch(
         self, file_path: Path, modified_code: str, dry_run: bool = False
@@ -57,18 +78,9 @@ class BaseCodePatcher(ABC):
             Tuple[bool, Optional[str]]: (Valid, Error message)
         """
         try:
-            # Use absolute path from LLM response
-            if not file_path.is_absolute():
-                logger.warning(
-                    f"Relative path passed: {file_path}. Converting to absolute."
-                )
-                file_path = self.project_root / file_path
-
-            # Normalize path
-            file_path = file_path.resolve()
-
-            if not file_path.exists():
-                return False, f"File does not exist: {file_path}"
+            file_path, error_msg = self._normalize_file_path(file_path)
+            if error_msg:
+                return False, error_msg
 
             # Java syntax check
             if file_path.suffix == ".java":
