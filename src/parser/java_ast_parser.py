@@ -118,7 +118,7 @@ class JavaASTParser:
         import logging
 
         self.parser = Parser(JAVA_LANGUAGE)
-        self.logger = logging.getLogger("applycrypto")
+        self.logger = logging.getLogger(__name__)
         # cache_manager가 없으면 임시 디렉터리에 생성
         if cache_manager is None:
             from tempfile import mkdtemp

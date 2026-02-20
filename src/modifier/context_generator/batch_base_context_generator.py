@@ -23,7 +23,7 @@ from parser.java_ast_parser import JavaASTParser
 
 from .base_context_generator import BaseContextGenerator
 
-logger = logging.getLogger("applycrypto.context_generator")
+logger = logging.getLogger(__name__)
 
 
 class BatchBaseContextGenerator(BaseContextGenerator):

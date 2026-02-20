@@ -22,7 +22,7 @@ from modifier.llm.llm_provider import LLMProvider
 
 from ..base_code_generator import BaseCodeGenerator
 
-logger = logging.getLogger("applycrypto")
+logger = logging.getLogger(__name__)
 
 
 class ControllerOrServiceCodeGenerator(BaseCodeGenerator):

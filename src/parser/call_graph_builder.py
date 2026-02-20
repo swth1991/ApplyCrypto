@@ -68,7 +68,7 @@ class CallGraphBuilder:
         # EndpointExtractionStrategy 설정
         self.endpoint_strategy = endpoint_strategy
 
-        self.logger = logging.getLogger("applycrypto")
+        self.logger = logging.getLogger(__name__)
 
         # Call Graph (networkx DiGraph)
         self.call_graph: Optional[nx.DiGraph] = None

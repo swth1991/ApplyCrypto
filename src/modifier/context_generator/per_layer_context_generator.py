@@ -4,7 +4,7 @@ from typing import List, Dict
 from modifier.context_generator.base_context_generator import BaseContextGenerator
 from models.modification_context import ModificationContext
 
-logger = logging.getLogger("applycrypto.per_layer_context_generator")
+logger = logging.getLogger(__name__)
 
 
 class PerLayerContextGenerator(BaseContextGenerator):

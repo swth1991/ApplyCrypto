@@ -6,7 +6,7 @@ from typing import Optional, Tuple
 
 from config.config_manager import Configuration
 
-logger = logging.getLogger("applycrypto.code_patcher")
+logger = logging.getLogger(__name__)
 
 
 class BaseCodePatcher(ABC):

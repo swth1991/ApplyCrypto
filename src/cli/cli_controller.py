@@ -205,7 +205,7 @@ class CLIController:
         )
 
         # 로거 설정
-        logger = logging.getLogger("applycrypto")
+        logger = logging.getLogger()  # root logger
         logger.setLevel(logging.DEBUG)
 
         # 파일 핸들러

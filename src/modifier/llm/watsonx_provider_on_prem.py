@@ -16,7 +16,7 @@ from .llm_provider import LLMProvider
 
 warnings.filterwarnings("ignore")
 
-logger = logging.getLogger("applycrypto.code_patcher")
+logger = logging.getLogger(__name__)
 
 
 class WatsonXAIOnPremiseProvider(LLMProvider):

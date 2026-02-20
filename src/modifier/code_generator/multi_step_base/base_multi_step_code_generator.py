@@ -36,7 +36,7 @@ from modifier.llm.llm_provider import LLMProvider
 
 from ..base_code_generator import BaseCodeGenerator, CodeGeneratorError, render_template
 
-logger = logging.getLogger("applycrypto")
+logger = logging.getLogger(__name__)
 
 
 # 토큰 계산을 위한 기본 템플릿 (BaseContextGenerator.create_batches()에서 사용)

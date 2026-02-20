@@ -24,7 +24,7 @@ from modifier.llm.llm_provider import LLMProvider
 
 from ..multi_step_base import BaseMultiStepCodeGenerator
 
-logger = logging.getLogger("applycrypto")
+logger = logging.getLogger(__name__)
 
 
 class ThreeStepCodeGenerator(BaseMultiStepCodeGenerator):

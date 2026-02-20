@@ -1,5 +1,5 @@
 import streamlit as st
-import os
+from pathlib import Path
 
 @st.cache_data
 def get_code_snippet(file_path, start_line, end_line):
@@ -7,7 +7,7 @@ def get_code_snippet(file_path, start_line, end_line):
     Reads the file at file_path and extracts lines from start_line to end_line.
     Returns the snippet as a string or None if file not found.
     """
-    if not file_path or not os.path.exists(file_path):
+    if not file_path or not Path(file_path).exists():
         return None
     
     try:
@@ -155,7 +155,7 @@ def render_call_graph_view():
                         snippet = get_code_snippet(fp, sl, el)
                         if snippet:
                             st.code(snippet, language='java')
-                            st.caption(f"Source: {os.path.basename(fp)} (Line {sl}-{el})")
+                            st.caption(f"Source: {Path(fp).name} (Line {sl}-{el})")
                         else:
                             st.text("코드 스니펫을 사용할 수 없습니다 (파일을 로컬에서 찾을 수 없거나 범위가 잘못되었습니다).")
                 

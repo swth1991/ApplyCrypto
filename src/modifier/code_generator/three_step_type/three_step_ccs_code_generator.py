@@ -25,7 +25,7 @@ from models.table_access_info import TableAccessInfo
 
 from .three_step_code_generator import ThreeStepCodeGenerator
 
-logger = logging.getLogger("applycrypto")
+logger = logging.getLogger(__name__)
 
 # CCS prefix별 유틸리티 클래스 매핑
 # package_prefix: sli.ccs.{prefix}.svcutil 형태의 import 경로에 사용

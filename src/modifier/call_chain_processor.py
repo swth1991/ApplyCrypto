@@ -22,7 +22,7 @@ from .llm.llm_factory import create_llm_provider
 from .llm.llm_provider import LLMProvider
 from .result_tracker import ResultTracker
 
-logger = logging.getLogger("applycrypto.call_chain_processor")
+logger = logging.getLogger(__name__)
 
 
 # Bean, VO, DTO 등 제외할 클래스 패턴

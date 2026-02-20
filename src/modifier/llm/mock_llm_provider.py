@@ -11,7 +11,7 @@ from typing import Any, Dict, Optional
 
 from .llm_provider import LLMProvider
 
-logger = logging.getLogger("applycrypto.code_patcher")
+logger = logging.getLogger(__name__)
 
 
 class MockLLMProvider(LLMProvider):

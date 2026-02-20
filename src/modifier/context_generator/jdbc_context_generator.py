@@ -7,7 +7,7 @@ from models.modification_context import ModificationContext
 
 from modifier.context_generator.base_context_generator import BaseContextGenerator
 
-logger = logging.getLogger("applycrypto.jdbc_context_generator")
+logger = logging.getLogger(__name__)
 
 
 class JdbcContextGenerator(BaseContextGenerator):

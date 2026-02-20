@@ -25,7 +25,7 @@ from parser.java_ast_parser import JavaASTParser
 
 from .three_step_code_generator import ThreeStepCodeGenerator
 
-logger = logging.getLogger("applycrypto")
+logger = logging.getLogger(__name__)
 
 
 @dataclass

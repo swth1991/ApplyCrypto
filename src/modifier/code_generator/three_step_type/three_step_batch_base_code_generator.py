@@ -37,7 +37,7 @@ from models.table_access_info import TableAccessInfo
 
 from .three_step_code_generator import ThreeStepCodeGenerator
 
-logger = logging.getLogger("applycrypto")
+logger = logging.getLogger(__name__)
 
 
 class ThreeStepBatchBaseCodeGenerator(ThreeStepCodeGenerator):

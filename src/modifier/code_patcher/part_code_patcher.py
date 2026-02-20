@@ -6,7 +6,7 @@ from typing import Optional, Tuple, List
 
 from .base_code_patcher import BaseCodePatcher
 
-logger = logging.getLogger("applycrypto.code_patcher")
+logger = logging.getLogger(__name__)
 
 
 @dataclass

@@ -25,7 +25,7 @@ from models.table_access_info import TableAccessInfo
 
 from .three_step_batch_base_code_generator import ThreeStepBatchBaseCodeGenerator
 
-logger = logging.getLogger("applycrypto")
+logger = logging.getLogger(__name__)
 
 
 class ThreeStepCCSBatchCodeGenerator(ThreeStepBatchBaseCodeGenerator):

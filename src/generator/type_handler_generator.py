@@ -19,7 +19,7 @@ from modifier.llm.llm_provider import LLMProvider
 from modifier.result_tracker import ResultTracker
 from persistence.data_persistence_manager import DataPersistenceManager
 
-logger = logging.getLogger("applycrypto.type_handler_generator")
+logger = logging.getLogger(__name__)
 
 
 class TypeHandlerGenerator:

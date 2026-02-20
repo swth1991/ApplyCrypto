@@ -16,7 +16,7 @@ from config.config_manager import Configuration
 
 from .batch_base_context_generator import BatchBaseContextGenerator
 
-logger = logging.getLogger("applycrypto.context_generator")
+logger = logging.getLogger(__name__)
 
 
 class BNKBatchContextGenerator(BatchBaseContextGenerator):

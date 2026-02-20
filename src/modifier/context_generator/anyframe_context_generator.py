@@ -7,7 +7,7 @@ from models.modification_context import ModificationContext
 from modifier.context_generator.base_context_generator import BaseContextGenerator
 from parser.java_ast_parser import JavaASTParser
 
-logger = logging.getLogger("applycrypto.anyframe_context_generator")
+logger = logging.getLogger(__name__)
 
 
 class AnyframeContextGenerator(BaseContextGenerator):

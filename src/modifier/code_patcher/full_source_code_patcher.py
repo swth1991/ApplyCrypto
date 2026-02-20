@@ -4,7 +4,7 @@ from typing import Optional, Tuple
 
 from .base_code_patcher import BaseCodePatcher
 
-logger = logging.getLogger("applycrypto.code_patcher")
+logger = logging.getLogger(__name__)
 
 
 class FullSourceCodePatcher(BaseCodePatcher):

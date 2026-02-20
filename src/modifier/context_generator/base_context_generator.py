@@ -10,7 +10,7 @@ from models.modification_context import ModificationContext
 
 from modifier.code_generator.base_code_generator import BaseCodeGenerator
 
-logger = logging.getLogger("applycrypto.context_generator")
+logger = logging.getLogger(__name__)
 
 
 class BaseContextGenerator(ABC):

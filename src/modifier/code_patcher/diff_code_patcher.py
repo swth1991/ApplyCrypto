@@ -7,7 +7,7 @@ from persistence.debug_manager import DebugManager
 from .base_code_patcher import BaseCodePatcher
 from .diff_utils import FileDiff, LineType, UnifiedDiffHunk, parse_diff
 
-logger = logging.getLogger("applycrypto.code_patcher")
+logger = logging.getLogger(__name__)
 
 
 class DiffCodePatcher(BaseCodePatcher):

@@ -26,7 +26,7 @@ from modifier.code_generator.base_code_generator import BaseCodeGenerator
 from modifier.context_generator.base_context_generator import BaseContextGenerator
 from parser.java_ast_parser import JavaASTParser
 
-logger = logging.getLogger("applycrypto.anyframe_banka_context_generator")
+logger = logging.getLogger(__name__)
 
 
 class AnyframeBankaContextGenerator(BaseContextGenerator):
