@@ -37,8 +37,11 @@ class MyBatisDigitalChannelSQLExtractor(MyBatisSQLExtractor):
         if not target_dir:
             return
 
-        # map 파일 경로
-        output_file = "digital_chananel_specific_map.json"
+        # map 파일 경로 (targetproject/.applycrypto/results 하위)
+        from pathlib import Path
+        output_dir = Path(target_dir) / ".applycrypto" / "results"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_file = str(output_dir / "digital_chananel_specific_map.json")
         
         # 파일 찾기 및 파싱
         file_list = self._find_java_files(target_dir)
@@ -130,30 +133,35 @@ class MyBatisDigitalChannelSQLExtractor(MyBatisSQLExtractor):
             layer_files["xml"].add(xml_file_path)
             all_files.add(xml_file_path)
 
-        # method_string 생성: namespace의 class_name + sql query의 id
+        # method_string 생성: namespace의 class_name + 메서드명
         method_string = None
         query_id = sql_query.get("id", "")
         if namespace and query_id:
-            # namespace에서 마지막 클래스명 추출
-            class_name = self._get_class_name(query_id, namespace) 
-            method_string = f"{class_name}.{query_id}"
+            # namespace에서 마지막 클래스명과 메서드명 추출
+            class_name, method_name = self._get_class_and_method_name(query_id, namespace) 
+            method_string = f"{class_name}.{method_name}"
 
         return method_string, layer_files, all_files
 
-    def _get_class_name(self, query_id: str, namespace: str) -> str:
+    def _get_class_and_method_name(self, query_id: str, namespace: str) -> Tuple[str, str]:
         """
-        Query ID와 Namespace를 기반으로 클래스명 추출
+        Query ID와 Namespace를 기반으로 클래스명과 메서드명 추출
         map 파일(digital_chananel_specific_map.json)을 활용하여 매핑 찾기
 
         Args:
-            query_id: SQL Query ID (메서드명)
+            query_id: SQL Query ID
             namespace: Mapper Namespace
 
         Returns:
-            str: 매핑된 클래스명 또는 namespace의 마지막 부분
+            Tuple[str, str]: 매핑된 클래스명과 메서드명, 또는 namespace의 마지막 부분과 query_id
         """
         if self._namespace_map_cache is None:
+            # map 파일 경로 지정
             map_file = "digital_chananel_specific_map.json"
+            if self.config and self.config.target_project:
+                from pathlib import Path
+                map_file = str(Path(self.config.target_project) / ".applycrypto" / "results" / "digital_chananel_specific_map.json")
+                
             if os.path.exists(map_file):
                 try:
                     with open(map_file, "r", encoding="utf-8") as f:
@@ -167,15 +175,17 @@ class MyBatisDigitalChannelSQLExtractor(MyBatisSQLExtractor):
         # namespace로 조회
         if namespace in self._namespace_map_cache:
             class_map = self._namespace_map_cache[namespace]
-            # 해당 namespace 아래의 클래스들을 순회하며 query_id(메서드명)가 있는지 확인
+            # 해당 namespace 아래의 클래스들을 순회하며 query_id에 해당하는 메서드 찾기
             for class_name, methods in class_map.items():
                 for method_info in methods:
                     if isinstance(method_info, dict):
-                        if method_info.get("sql_id") == query_id or method_info.get("method") == query_id:
-                            return class_name
+                        if method_info.get("sql_id") == query_id:
+                            return class_name, method_info.get("method", query_id)
+                        elif method_info.get("method") == query_id:
+                            return class_name, query_id
                     elif method_info == query_id:
-                        return class_name
+                        return class_name, query_id
         
-        # 매핑되지 않았거나 찾을 수 없는 경우 기본 동작 (namespace의 마지막 부분 사용)
-        return namespace.split(".")[-1]
+        # 매핑되지 않았거나 찾을 수 없는 경우 기본 동작 (namespace의 마지막 부분, query_id 반환)
+        return namespace.split(".")[-1], query_id
 

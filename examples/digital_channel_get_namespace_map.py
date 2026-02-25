@@ -66,10 +66,16 @@ def main():
             count += 1
             print(f"[{count}] Found {class_name} in {namespace} with {len(methods)} methods")
 
-    with open(OUTPUT_FILE, 'w', encoding='utf-8') as f:
+    output_dir = os.path.join(target_dir, ".applycrypto", "results")
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir, exist_ok=True)
+        
+    output_file_path = os.path.join(output_dir, OUTPUT_FILE)
+
+    with open(output_file_path, 'w', encoding='utf-8') as f:
         json.dump(result, f, indent=4, ensure_ascii=False)
     
-    print(f"Saved {count} entries to {OUTPUT_FILE}")
+    print(f"Saved {count} entries to {output_file_path}")
 
 if __name__ == "__main__":
     main()
