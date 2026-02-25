@@ -116,7 +116,77 @@ import sli.fw.online.constants.SliEncryptionConstants;
 
 ---
 
-## Modification Instructions (Generated from Phase 2)
+## CCS Utility Classes Reference (★★★ CRITICAL ★★★)
+
+### Configured Utilities
+{{ ccs_util_info }}
+
+### Required Imports (add if not present)
+```java
+import {{ common_util_import }};    // e.g., sli.ccs.bc.svcutil.BCCommonUtil
+import {{ masking_util_import }};   // e.g., sli.ccs.bc.svcutil.BCMaskingUtil
+import sli.fw.util.StringUtil;
+import sli.fw.mask.SliMaskingConstant;
+import java.util.HashMap;
+import java.util.Map;
+```
+
+### Single-Record Encryption (ENCRYPT action)
+```java
+String {field}Encr = "";
+{field}Encr = {{ common_util }}.getDefaultValue(
+    !StringUtil.isEmptyTrimmed(vo.get{Field}()),
+    SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, vo.get{Field}(), true),
+    SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, " ", true)
+);
+vo.set{Field}({field}Encr);
+```
+
+### Single-Record Decryption (DECRYPT action)
+```java
+String {field}Decr = "";
+{field}Decr = {{ common_util }}.getDefaultValue(
+    !StringUtil.isEmptyTrimmed(vo.get{Field}()),
+    SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.NAME, vo.get{Field}(), true),
+    SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.NAME, " ", true)
+);
+vo.set{Field}({field}Decr);
+```
+
+### Multi-Record Decryption (DECRYPT_LIST action)
+```java
+// Step 1: Batch decrypt using setListDecryptAndMask
+Map<String, String> targetEncr = new HashMap<String, String>();
+targetEncr.put("{javaField}", SliEncryptionConstants.Policy.NAME);
+outSVOs = (List<{VOType}>) {{ common_util }}.setListDecryptAndMask(outSVOs, targetEncr);
+
+// Step 2: Mask name fields (xxxMask fields) - setListDecryptAndMask doesn't mask names
+for (int i = 0; i < outSVOs.size(); i++) {
+    outSVOs.get(i).set{Field}Mask({{ masking_util }}.mask(SliMaskingConstant.NAME, outSVOs.get(i).get{Field}()));
+}
+```
+
+### Multi-Record Decryption WITHOUT Masking (DECRYPT_LIST action)
+```java
+Map<String, String> targetEncr = new HashMap<String, String>();
+targetEncr.put("{javaField}", SliEncryptionConstants.Policy.NAME);
+// Third parameter 'false' disables masking - no need for separate masking loop
+outSVOs = (List<{VOType}>) {{ common_util }}.setListDecryptAndMask(outSVOs, targetEncr, false);
+```
+
+---
+
+## ★★★ MANDATORY: Modification Instructions (Generated from Phase 2) ★★★
+
+**CRITICAL: You MUST execute ALL instructions below. Missing any instruction is a FAILURE.**
+
+Each instruction specifies:
+- `query_id`: The query/method to modify
+- `action`: ENCRYPT, DECRYPT, DECRYPT_LIST, or SKIP
+- `insertion_point`: Exact location to insert code
+- `code_pattern_hint`: The encryption/decryption code to add
+
+**Verify each instruction is applied before outputting code.**
 
 {{ modification_instructions }}
 
@@ -128,6 +198,18 @@ import sli.fw.online.constants.SliEncryptionConstants;
 Use these **exact indices** in your output.
 
 {{ source_files }}
+
+---
+
+## ⚠️ PRE-OUTPUT VERIFICATION (REQUIRED) ⚠️
+
+Before generating output, verify:
+1. ☐ Did I apply ALL modification instructions from Phase 2?
+2. ☐ Did I insert code at each `insertion_point` specified?
+3. ☐ Did I use the correct `code_pattern_hint` for each field?
+4. ☐ Did I add necessary imports (SliEncryptionUtil, etc.)?
+
+**If ANY instruction was missed, go back and apply it before outputting.**
 
 ---
 
@@ -189,6 +271,15 @@ public class EmployeeService {
 
 Execute the modification instructions for each file and output results in the specified format.
 **Output must be provided for ALL target files** (regardless of whether modification is needed).
+
+### ★★★ CRITICAL FINAL CHECK ★★★
+
+**BEFORE outputting, verify you have:**
+- ✅ Applied EVERY instruction from the modification_instructions section
+- ✅ Used EVERY `insertion_point` specified
+- ✅ Applied EVERY `code_pattern_hint` specified
+
+**DO NOT skip any instruction. Phase 2 analysis determined these are necessary.**
 
 ### Important Reminders
 

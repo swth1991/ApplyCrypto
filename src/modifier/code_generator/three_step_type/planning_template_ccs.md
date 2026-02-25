@@ -58,19 +58,140 @@ import sli.fw.online.constants.SliEncryptionConstants;
 | **Date of Birth (생년월일)**   | `dob`       | `SliEncryptionConstants.Policy.DOB`      | dob, dateOfBirth, birthDate, birthday, dayOfBirth, birthDt, BIRTH_DT                     |
 | **Resident Number (주민등록번호)** | `rrn`   | `SliEncryptionConstants.Policy.ENC_NO`   | jumin, juminNumber, ssn, residentNumber, juminNo, JUMIN_NO, residentNo, rrn              |
 
-### ★★★ CRITICAL: All columns in table_info ARE encryption targets ★★★
+### ★★★ CRITICAL: Role of table_info vs mapping_info ★★★
 
-**Every column listed in `table_info.columns` has been explicitly configured by the user as an encryption target.**
+**`table_info.columns`**: Project-level configuration - columns that MAY need encryption/decryption
+- Used to determine the correct `policy constant` (via `encryption_code` or `column_type`)
+- Does NOT mean every query must encrypt/decrypt these columns
 
-- **DO NOT skip** any column that appears in `table_info.columns`
-- `table_info.columns[].name` is the **DB column name** (e.g., `gvnm`)
-- The corresponding **Java field name/alias** (e.g., `aenam`) is identified in Phase 1's `mapping_info`
-- Even if the DB column name doesn't match common patterns, it IS an encryption target
-- Use `column_type` or `encryption_code` from table_info to determine the correct policy constant
+**`mapping_info.crypto_fields`**: Query-level analysis result from Phase 1 - columns that ACTUALLY need encryption/decryption for each specific query
+- **THIS IS THE SOURCE OF TRUTH** for what to encrypt/decrypt
+- If `crypto_fields` is empty for a query → that query does NOT need encryption/decryption for this table
 
 **Important Distinction:**
-- `table_info.columns`: Contains **DB column names** configured by user (e.g., `gvnm`)
-- `mapping_info.crypto_fields`: Contains **Java field mappings** analyzed in Phase 1 (e.g., `gvnm` → `aenam`)
+- `table_info.columns`: Reference for policy constant lookup (e.g., `gvnm` → `column_type: "name"` → `SliEncryptionConstants.Policy.NAME`)
+- `mapping_info.crypto_fields`: **Actual fields to process** - analyzed in Phase 1 (e.g., `gvnm` → `java_field: "aenam"`)
+
+**⚠️ DO NOT INVENT crypto_fields!** If Phase 1 returned empty `crypto_fields` for a query, trust it. Do NOT add fields just because they exist in `table_info.columns`.
+
+---
+
+## CCS Utility Classes (★★★ CRITICAL for CCS Projects ★★★)
+
+This project uses CCS-specific utility classes for encryption/decryption wrappers with null-safety.
+
+### Configured Utility Classes
+{{ ccs_util_info }}
+
+### Single-Record Encryption Pattern (★ CRITICAL: Null-safe wrapper)
+
+**For ENCRYPT action - Use `{{ common_util }}.getDefaultValue()` wrapper:**
+```java
+String nameEncr = "";
+nameEncr = {{ common_util }}.getDefaultValue(
+    !StringUtil.isEmptyTrimmed(inputVO.get{Field}()),
+    SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, inputVO.get{Field}(), true),
+    SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, " ", true)
+);
+inputVO.set{Field}(nameEncr);
+```
+
+**Explanation:**
+- First parameter: null/empty check condition
+- Second parameter: encryption result if not empty
+- Third parameter: encrypted space (" ") if empty - maintains encrypted format
+
+### Single-Record Decryption Pattern (★ CRITICAL: Null-safe wrapper)
+
+**For DECRYPT action - Use `{{ common_util }}.getDefaultValue()` wrapper:**
+```java
+String nameDecr = "";
+nameDecr = {{ common_util }}.getDefaultValue(
+    !StringUtil.isEmptyTrimmed(outputVO.get{Field}()),
+    SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.NAME, outputVO.get{Field}(), true),
+    SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.NAME, " ", true)
+);
+outputVO.set{Field}(nameDecr);
+```
+
+**getDefaultValue implementation:**
+```java
+public static String getDefaultValue(boolean flag, String value, String defaultValue) {
+    return flag ? value : defaultValue;
+}
+```
+
+### Multi-Record Decryption Pattern (★ For List results - DECRYPT_LIST action)
+
+**IMPORTANT: This pattern is for DECRYPTION ONLY (online systems don't batch-encrypt multiple names)**
+
+**Step 1: Decrypt using setListDecryptAndMask**
+```java
+Map<String, String> targetEncr = new HashMap<String, String>();
+targetEncr.put("{javaField1}", SliEncryptionConstants.Policy.NAME);
+targetEncr.put("{javaField2}", SliEncryptionConstants.Policy.NAME);
+outSVOs = (List<{VOType}>) {{ common_util }}.setListDecryptAndMask(outSVOs, targetEncr);
+```
+
+**Step 2: Mask name fields separately (setListDecryptAndMask doesn't mask names)**
+```java
+for (int i = 0; i < outSVOs.size(); i++) {
+    outSVOs.get(i).set{Field1}Mask({{ masking_util }}.mask(SliMaskingConstant.NAME, outSVOs.get(i).get{Field1}()));
+    outSVOs.get(i).set{Field2}Mask({{ masking_util }}.mask(SliMaskingConstant.NAME, outSVOs.get(i).get{Field2}()));
+}
+```
+
+**Complete pattern:**
+```java
+// Step 1: Batch decrypt + mask (name masking not included)
+Map<String, String> targetEncr = new HashMap<String, String>();
+targetEncr.put("phclCustNm", SliEncryptionConstants.Policy.NAME);
+targetEncr.put("cnslNm", SliEncryptionConstants.Policy.NAME);
+outSVOs = (List<CRSmsEmiActHstrSVO>) {{ common_util }}.setListDecryptAndMask(outSVOs, targetEncr);
+
+// Step 2: Mask name fields (xxxMask fields)
+for (int i = 0; i < outSVOs.size(); i++) {
+    outSVOs.get(i).setPhclCustNmMask({{ masking_util }}.mask(SliMaskingConstant.NAME, outSVOs.get(i).getPhclCustNm()));
+    outSVOs.get(i).setCnslNmMask({{ masking_util }}.mask(SliMaskingConstant.NAME, outSVOs.get(i).getCnslNm()));
+}
+
+resultVO.setListCRSmsEmiActHstrSVO(outSVOs);
+```
+
+### Multi-Record Decryption WITHOUT Masking
+
+**Use third parameter `false` when masking should NOT be applied:**
+
+```java
+Map<String, String> targetEncr = new HashMap<String, String>();
+targetEncr.put("wrtr", SliEncryptionConstants.Policy.NAME);
+// Third parameter 'false' disables masking - no need for separate masking loop
+outSVOs = (List<{VOType}>) {{ common_util }}.setListDecryptAndMask(outSVOs, targetEncr, false);
+```
+
+**When to use `false` (no masking):**
+- Data is displayed in internal admin system (관리자 화면)
+- Data is used for further processing/calculations
+- Export to external systems that need plaintext
+
+**When to use default (with masking):**
+- Data is displayed to end users (고객 화면 출력)
+- Security/privacy requirements mandate masking
+
+### When to Use Each Pattern
+
+| Scenario | Pattern | Action |
+|----------|---------|--------|
+| Single VO encryption | Single-Record Encryption | `ENCRYPT` |
+| Single VO decryption | Single-Record Decryption | `DECRYPT` |
+| List<VO> decryption (with masking) | setListDecryptAndMask + mask loop | `DECRYPT_LIST` |
+| List<VO> decryption (no masking) | setListDecryptAndMask(..., false) | `DECRYPT_LIST` |
+| Existing for-loop iterating List | Single-Record inside loop | `DECRYPT` |
+
+**Decision rule for List decryption:**
+- If code already has a for-loop iterating the list → use Single-Record pattern inside the loop
+- If no existing for-loop → use Multi-Record pattern (setListDecryptAndMask + masking loop)
+- If no masking needed → use Multi-Record pattern with third parameter `false`
 
 ---
 
@@ -104,11 +225,12 @@ Each column in `table_info.columns` may contain:
 
 **Instructions:**
 
-1. **ALL columns in table_info.columns ARE encryption targets** - do NOT skip any of them
-2. Use `encryption_code` or `column_type` to determine the correct policy constant
+1. **Trust `mapping_info.crypto_fields`** - this is Phase 1's analysis result. If it's empty, NO encryption/decryption needed for that query
+2. Use `table_info.columns[]` to look up `encryption_code` or `column_type` for determining policy constant
 3. Analyze queries from `mapping_info.queries[]` (NOT raw SQL - SQL was analyzed in Phase 1)
 4. Only analyze methods that are part of call chains in `call_stacks`
 5. Generate modification instructions ONLY for files in `source_files`
+6. **If `crypto_fields` is empty** → output `action: "SKIP"` with appropriate reason
 
 **IMPORTANT: SQL queries are NOT provided directly in this phase.**
 Use `mapping_info` from Phase 1 which contains pre-analyzed query information including:
@@ -119,6 +241,21 @@ Use `mapping_info` from Phase 1 which contains pre-analyzed query information in
 ### Data Mapping Summary (★ Pre-analyzed from Phase 1)
 
 The following `mapping_info` was extracted in Phase 1 and contains all SQL query analysis results.
+
+**★★★ CRITICAL: Trust Phase 1 Results ★★★**
+
+**IMPORTANT: If a query appears in `mapping_info`, it HAS ALREADY BEEN VERIFIED to access the target table.**
+
+- Phase 1 analyzed ALL SQL queries and filtered ONLY those accessing the target table
+- Do NOT re-evaluate whether a query accesses the target table
+- The target table may be accessed via subquery, JOIN, or other complex SQL patterns
+- If `crypto_fields` is non-empty, encryption/decryption IS required - trust this analysis
+
+**Field Presence Rules:**
+- If `input_mapping.crypto_fields` is empty → NO encryption needed for input
+- If `output_mapping.crypto_fields` is empty → NO decryption needed for output
+- If BOTH are empty → `action: "SKIP"` (this query doesn't involve target columns)
+- **DO NOT invent or add fields** that weren't identified in Phase 1
 
 **mapping_info Structure:**
 
@@ -204,31 +341,83 @@ Call path from controller to SQL:
 **For each call chain in call_stacks**, analyze the data flow:
 
 1. Find the matching SQL query in `mapping_info.queries` by matching `query_id` with DAO method.
-2. Use `command_type` and mapping location to determine crypto action:
+2. **Check if `crypto_fields` is empty:**
+   - If BOTH `input_mapping.crypto_fields` AND `output_mapping.crypto_fields` are empty → `action: "SKIP"`
+   - **DO NOT assume** encryption/decryption is needed just because the query touches the target table
+3. If `crypto_fields` has entries, use `command_type` and mapping location to determine crypto action:
    - `INSERT/UPDATE` command with `input_mapping.crypto_fields` → **ENCRYPT** before DAO call
    - `SELECT` command with `output_mapping.crypto_fields` → **DECRYPT** after DAO returns
    - `SELECT` command with `input_mapping.crypto_fields` (WHERE clause) → **ENCRYPT** search param first
-3. Match `crypto_fields[].column_name` with `table_info.columns[].name` to verify encryption target.
+4. Use `table_info.columns[]` to look up `encryption_code` or `column_type` for policy constant.
 
 ### 2. Using Data Mapping (from mapping_info)
 
 **If Input/Output is a VO:**
 
-- **With `getter`/`setter` provided**: Use them directly
-  - Example: `vo.setEmpNm(SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, vo.getEmpNm()));`
+- **With `getter`/`setter` provided**: Use CCS utility wrapper patterns **for NAME fields**
+  - NAME Field ENCRYPT Example:
+    ```java
+    String empNmEncr = "";
+    empNmEncr = {{ common_util }}.getDefaultValue(
+        !StringUtil.isEmptyTrimmed(vo.getEmpNm()),
+        SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, vo.getEmpNm(), true),
+        SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, " ", true)
+    );
+    vo.setEmpNm(empNmEncr);
+    ```
+  - NAME Field DECRYPT Example:
+    ```java
+    String empNmDecr = "";
+    empNmDecr = {{ common_util }}.getDefaultValue(
+        !StringUtil.isEmptyTrimmed(vo.getEmpNm()),
+        SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.NAME, vo.getEmpNm(), true),
+        SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.NAME, " ", true)
+    );
+    vo.setEmpNm(empNmDecr);
+    ```
+  - DOB/ENC_NO Fields: Use direct SliEncryptionUtil call (no CCS wrapper needed)
+    ```java
+    vo.setBirthDt(SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.DOB, vo.getBirthDt()));
+    vo.setJuminNo(SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.ENC_NO, vo.getJuminNo()));
+    ```
 - **Without `getter`/`setter`** (VO file wasn't provided in Phase 1): Infer from `java_field`
   - Assume standard JavaBean conventions: `getXxx()` / `setXxx()`
-  - Example: `java_field: "empNm"` → `vo.getEmpNm()` / `vo.setEmpNm()`
 
 **If Input/Output is a Map:**
 
 - Use `java_field` as the Map key (this includes aliases if SQL uses them)
-- Example: `map.put("ssn", SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.ENC_NO, (String)map.get("ssn")));`
+- NAME Field DECRYPT Example (CCS wrapper):
+  ```java
+  String nameDecr = "";
+  nameDecr = {{ common_util }}.getDefaultValue(
+      !StringUtil.isEmptyTrimmed((String)map.get("name")),
+      SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.NAME, (String)map.get("name"), true),
+      SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.NAME, " ", true)
+  );
+  map.put("name", nameDecr);
+  ```
+- DOB/ENC_NO Fields (direct call):
+  ```java
+  map.put("ssn", SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.ENC_NO, (String)map.get("ssn")));
+  ```
 
 **If Input/Output is Primitive:**
 
-- It's a single value (e.g., String param). Encrypt/Decrypt the variable directly.
-- Example: `jumin = SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.ENC_NO, jumin);`
+- It's a single value (e.g., String param). Use CCS utility wrapper **for NAME fields**.
+- NAME Field ENCRYPT Example:
+  ```java
+  String empNmEncr = "";
+  empNmEncr = {{ common_util }}.getDefaultValue(
+      !StringUtil.isEmptyTrimmed(empNm),
+      SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, empNm, true),
+      SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, " ", true)
+  );
+  empNm = empNmEncr;
+  ```
+- DOB/ENC_NO Fields (direct call):
+  ```java
+  jumin = SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.ENC_NO, jumin);
+  ```
 
 ### 3. Modification Location Decision (★ CRITICAL: Service Layer Priority)
 
@@ -252,19 +441,33 @@ This causes double encryption/decryption which corrupts data.
 ```java
 // ❌ WRONG: Crypto in both layers
 // Controller
-vo.setName(SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, vo.getName()));  // First encryption
+String nameEncr = {{ common_util }}.getDefaultValue(!StringUtil.isEmptyTrimmed(vo.getName()),
+    SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, vo.getName(), true),
+    SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, " ", true));
+vo.setName(nameEncr);  // First encryption
 employeeService.save(vo);
 
 // Service
-vo.setName(SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, vo.getName()));  // Double encryption! DATA CORRUPTED!
+String nameEncr2 = {{ common_util }}.getDefaultValue(!StringUtil.isEmptyTrimmed(vo.getName()),
+    SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, vo.getName(), true),
+    SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, " ", true));
+vo.setName(nameEncr2);  // Double encryption! DATA CORRUPTED!
 employeeDao.insert(vo);
 
 // ✅ CORRECT: Crypto only in Service layer
 // Controller - NO crypto logic
 employeeService.save(vo);
 
-// Service - crypto logic HERE
-vo.setName(SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, vo.getName()));
+// Service - crypto logic HERE using CCS utility wrapper (NAME fields)
+String nameEncr = "";
+nameEncr = {{ common_util }}.getDefaultValue(
+    !StringUtil.isEmptyTrimmed(vo.getName()),
+    SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, vo.getName(), true),
+    SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, " ", true)
+);
+vo.setName(nameEncr);
+// DOB/ENC_NO fields use direct calls
+vo.setBirthDt(SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.DOB, vo.getBirthDt()));
 employeeDao.insert(vo);
 ```
 
@@ -299,6 +502,7 @@ employeeDao.insert(vo);
       {
         "flow_id": "FLOW_001",
         "flow_name": "User Registration Flow",
+        "sql_query_id": "com.example.mapper.UserMapper.insertUser",
         "direction": "INBOUND_TO_DB | DB_TO_OUTBOUND | BIDIRECTIONAL",
         "data_source": {
           "type": "HTTP_REQUEST | SESSION | DB | EXTERNAL_API",
@@ -318,7 +522,7 @@ employeeDao.insert(vo);
       "flow_id": "FLOW_001 (matches data_flow_analysis.flows[].flow_id)",
       "file_name": "File name (e.g., UserService.java)",
       "target_method": "Method name to modify",
-      "action": "ENCRYPT | DECRYPT | ENCRYPT_THEN_DECRYPT | SKIP",
+      "action": "ENCRYPT | DECRYPT | DECRYPT_LIST | ENCRYPT_THEN_DECRYPT | SKIP",
       "reason": "Reason for this modification (or reason for SKIP)",
       "target_properties": ["empNm", "birthDt", "juminNo"],
       "insertion_point": "Code insertion location description (e.g., 'right before dao.insert(list) call')",
@@ -336,6 +540,7 @@ For `direction: "BIDIRECTIONAL"` (e.g., search with encrypted WHERE + decrypted 
 {
   "flow_id": "FLOW_001",
   "flow_name": "Customer Search with Encrypted WHERE",
+  "sql_query_id": "com.example.mapper.CustomerMapper.selectByName",
   "direction": "BIDIRECTIONAL",
   "INBOUND_TO_DB": {
     "data_source": {
@@ -367,9 +572,10 @@ For `direction: "BIDIRECTIONAL"` (e.g., search with encrypted WHERE + decrypted 
 | Field               | Description                                              | Example                                                       |
 | ------------------- | -------------------------------------------------------- | ------------------------------------------------------------- |
 | `flow_id`           | Reference to data_flow_analysis.flows[].flow_id          | `FLOW_001`, `FLOW_002`                                        |
+| `sql_query_id`      | Matching query_id from mapping_info.queries[]            | `com.example.mapper.UserMapper.insertUser`                    |
 | `file_name`         | File name to modify                                      | `UserService.java`, `EmpController.java`                      |
 | `target_method`     | Method name to modify                                    | `saveUser`, `getUserList`                                     |
-| `action`            | Action to perform                                        | `ENCRYPT`, `DECRYPT`, `ENCRYPT_THEN_DECRYPT`, `SKIP`          |
+| `action`            | Action to perform                                        | `ENCRYPT`, `DECRYPT`, `DECRYPT_LIST`, `ENCRYPT_THEN_DECRYPT`, `SKIP` |
 | `target_properties` | Properties to encrypt/decrypt (array of strings)         | `["empNm", "birthDt", "juminNo"]`                             |
 | `insertion_point`   | Insertion location description                           | `right before dao.insert() call`, `right before return list;` |
 | `code_pattern_hint` | Code pattern example                                     | `vo.setEmpNm(SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, vo.getEmpNm()));` |
@@ -387,14 +593,15 @@ For `direction: "BIDIRECTIONAL"` (e.g., search with encrypted WHERE + decrypted 
 
 ### Important Notes
 
-1. **When action is SKIP**: Specify in `reason` which flow (flow_id) this refers to and why no modification is needed
-2. **target_properties**: Array of `java_field` names (strings) from `crypto_fields`. Use the Java field name, not DB column name.
-3. **insertion_point**: Describe specifically so code can be inserted in the next step
-4. **code_pattern_hint**:
+1. **sql_query_id**: Copy the exact `query_id` from `mapping_info.queries[]` that corresponds to this flow. Match the DAO method in `call_stacks` with `query_id` in `mapping_info`. If no DB access (e.g., Session → HTTP_RESPONSE), use `null`.
+2. **When action is SKIP**: Specify in `reason` which flow (flow_id) this refers to and why no modification is needed
+3. **target_properties**: Array of `java_field` names (strings) from `crypto_fields`. Use the Java field name, not DB column name.
+4. **insertion_point**: Describe specifically so code can be inserted in the next step
+5. **code_pattern_hint**:
    - For VO with getter/setter: Use them directly (e.g., `vo.setEmpNm(SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, vo.getEmpNm()));`)
    - For VO without getter/setter: Infer from java_field (e.g., `java_field: "empNm"` → `vo.setEmpNm(...)`)
    - For Map: Use java_field as key (e.g., `map.put("ssn", SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.ENC_NO, (String)map.get("ssn")));`)
-5. **Use mapping_info.crypto_fields**: Reference `java_field`, and `getter`/`setter` (if present) for accurate code patterns
+6. **Use mapping_info.crypto_fields**: Reference `java_field`, and `getter`/`setter` (if present) for accurate code patterns
 
 ---
 
@@ -518,6 +725,7 @@ When `mapping_info` shows a sensitive column in BOTH `input_mapping` AND `output
       {
         "flow_id": "FLOW_001",
         "flow_name": "Employee Registration (INSERT)",
+        "sql_query_id": "EmpMapper.insertEmp",
         "direction": "INBOUND_TO_DB",
         "data_source": {"type": "HTTP_REQUEST", "description": "Client POST request"},
         "data_sink": {"type": "DB", "description": "INSERT into TB_EMP"},
@@ -527,6 +735,7 @@ When `mapping_info` shows a sensitive column in BOTH `input_mapping` AND `output
       {
         "flow_id": "FLOW_002",
         "flow_name": "Employee Retrieval (SELECT)",
+        "sql_query_id": "EmpMapper.selectEmp",
         "direction": "DB_TO_OUTBOUND",
         "data_source": {"type": "DB", "description": "SELECT from TB_EMP"},
         "data_sink": {"type": "HTTP_RESPONSE", "description": "JSON response"},
@@ -544,7 +753,7 @@ When `mapping_info` shows a sensitive column in BOTH `input_mapping` AND `output
       "reason": "FLOW_001: INSERT command requires encryption before DB save",
       "target_properties": ["empNm", "birthDt", "juminNo"],
       "insertion_point": "Right before employeeDao.insert(vo) call",
-      "code_pattern_hint": "vo.setEmpNm(SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, vo.getEmpNm()));\nvo.setBirthDt(SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.DOB, vo.getBirthDt()));\nvo.setJuminNo(SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.ENC_NO, vo.getJuminNo()));"
+      "code_pattern_hint": "// NAME field: CCS utility wrapper\nString empNmEncr = \"\";\nempNmEncr = {{ common_util }}.getDefaultValue(\n    !StringUtil.isEmptyTrimmed(vo.getEmpNm()),\n    SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, vo.getEmpNm(), true),\n    SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, \" \", true)\n);\nvo.setEmpNm(empNmEncr);\n// DOB/ENC_NO fields: direct call\nvo.setBirthDt(SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.DOB, vo.getBirthDt()));\nvo.setJuminNo(SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.ENC_NO, vo.getJuminNo()));"
     },
     {
       "flow_id": "FLOW_002",
@@ -554,7 +763,7 @@ When `mapping_info` shows a sensitive column in BOTH `input_mapping` AND `output
       "reason": "FLOW_002: SELECT command requires decryption after DB retrieval",
       "target_properties": ["empNm", "birthDt", "juminNo"],
       "insertion_point": "Right after DAO return, before return statement",
-      "code_pattern_hint": "result.setEmpNm(SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.NAME, result.getEmpNm()));\nresult.setBirthDt(SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.DOB, result.getBirthDt()));\nresult.setJuminNo(SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.ENC_NO, result.getJuminNo()));"
+      "code_pattern_hint": "// NAME field: CCS utility wrapper\nString empNmDecr = \"\";\nempNmDecr = {{ common_util }}.getDefaultValue(\n    !StringUtil.isEmptyTrimmed(result.getEmpNm()),\n    SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.NAME, result.getEmpNm(), true),\n    SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.NAME, \" \", true)\n);\nresult.setEmpNm(empNmDecr);\n// DOB/ENC_NO fields: direct call\nresult.setBirthDt(SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.DOB, result.getBirthDt()));\nresult.setJuminNo(SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.ENC_NO, result.getJuminNo()));"
     }
   ]
 }
@@ -575,7 +784,7 @@ When `mapping_info` shows a sensitive column in BOTH `input_mapping` AND `output
 }
 ```
 
-**code_pattern_hint for Map:**
+**code_pattern_hint for Map (ENC_NO field - direct call):**
 ```java
 resultMap.put("ssn", SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.ENC_NO, (String)resultMap.get("ssn")));
 ```
@@ -600,6 +809,7 @@ resultMap.put("ssn", SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.
       {
         "flow_id": "FLOW_001",
         "flow_name": "Audit Log Insert (Session → DB)",
+        "sql_query_id": "AuditMapper.insertLog",
         "direction": "INBOUND_TO_DB",
         "data_source": {"type": "SESSION", "description": "User name from HTTP session (already plaintext)"},
         "data_sink": {"type": "DB", "description": "INSERT into audit_log table"},
@@ -617,7 +827,7 @@ resultMap.put("ssn", SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.
       "reason": "FLOW_001: Session data is plaintext, must encrypt before DB storage. No decryption needed.",
       "target_properties": ["userNm"],
       "insertion_point": "Right before auditDao.insertLog() call",
-      "code_pattern_hint": "logData.setUserNm(SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, logData.getUserNm()));"
+      "code_pattern_hint": "String userNmEncr = \"\";\nuserNmEncr = {{ common_util }}.getDefaultValue(\n    !StringUtil.isEmptyTrimmed(logData.getUserNm()),\n    SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, logData.getUserNm(), true),\n    SliEncryptionUtil.encrypt(SliEncryptionConstants.Policy.NAME, \" \", true)\n);\nlogData.setUserNm(userNmEncr);"
     }
   ]
 }
@@ -643,6 +853,7 @@ resultMap.put("ssn", SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.
       {
         "flow_id": "FLOW_001",
         "flow_name": "User Login (DB → Session)",
+        "sql_query_id": "UserMapper.selectByLoginId",
         "direction": "DB_TO_OUTBOUND",
         "data_source": {"type": "DB", "description": "SELECT user info (encrypted in DB)"},
         "data_sink": {"type": "SESSION", "description": "Store user info in HTTP session (as plaintext)"},
@@ -660,7 +871,61 @@ resultMap.put("ssn", SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.
       "reason": "FLOW_001: DB data is encrypted, must decrypt before storing plaintext in session",
       "target_properties": ["userNm", "birthDt"],
       "insertion_point": "Right after userDao.selectByLoginId() return, before session.setAttribute()",
-      "code_pattern_hint": "userInfo.setUserNm(SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.NAME, userInfo.getUserNm()));\nuserInfo.setBirthDt(SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.DOB, userInfo.getBirthDt()));"
+      "code_pattern_hint": "// NAME field: CCS utility wrapper\nString userNmDecr = \"\";\nuserNmDecr = {{ common_util }}.getDefaultValue(\n    !StringUtil.isEmptyTrimmed(userInfo.getUserNm()),\n    SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.NAME, userInfo.getUserNm(), true),\n    SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.NAME, \" \", true)\n);\nuserInfo.setUserNm(userNmDecr);\n// DOB field: direct call\nuserInfo.setBirthDt(SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.DOB, userInfo.getBirthDt()));"
+    }
+  ]
+}
+```
+
+---
+
+### Example: Empty crypto_fields (Phase 1 found no sensitive columns) ★ CRITICAL
+
+**Scenario:**
+- SQL: `SELECT emp_id, dept_code FROM TB_EMP WHERE emp_id = #{empId}`
+- Method chain: `EmpController.getDept()` → `EmpService.getDeptByEmpId()` → `EmpDao.selectDept()`
+- Note: Phase 1 analyzed this query and found NO sensitive columns (emp_nm, birth_dt not in SELECT)
+
+**mapping_info from Phase 1:**
+```json
+{
+  "query_id": "EmpMapper.selectDept",
+  "command_type": "SELECT",
+  "input_mapping": { "crypto_fields": [] },
+  "output_mapping": { "crypto_fields": [] }
+}
+```
+
+**Key Point:** Both `crypto_fields` are empty → **SKIP**. Do NOT invent encryption/decryption for columns not in Phase 1 result!
+
+**Output:**
+```json
+{
+  "data_flow_analysis": {
+    "overview": "Query retrieves non-sensitive columns (emp_id, dept_code). No encryption target columns involved.",
+    "flows": [
+      {
+        "flow_id": "FLOW_001",
+        "flow_name": "Get Department by EmpId",
+        "sql_query_id": "EmpMapper.selectDept",
+        "direction": "DB_TO_OUTBOUND",
+        "data_source": {"type": "DB", "description": "SELECT non-sensitive columns"},
+        "data_sink": {"type": "HTTP_RESPONSE", "description": "Return dept info"},
+        "path": "EmpController → EmpService → EmpDao → DB",
+        "sensitive_columns": []
+      }
+    ]
+  },
+  "modification_instructions": [
+    {
+      "flow_id": "FLOW_001",
+      "file_name": "EmpService.java",
+      "target_method": "getDeptByEmpId",
+      "action": "SKIP",
+      "reason": "FLOW_001: Phase 1 crypto_fields is empty - query does not involve encryption target columns",
+      "target_properties": [],
+      "insertion_point": "",
+      "code_pattern_hint": ""
     }
   ]
 }
@@ -685,6 +950,7 @@ resultMap.put("ssn", SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.
       {
         "flow_id": "FLOW_001",
         "flow_name": "Profile from Session (No DB)",
+        "sql_query_id": null,
         "direction": "SESSION_TO_OUTBOUND",
         "data_source": {"type": "SESSION", "description": "User profile stored in session (already plaintext)"},
         "data_sink": {"type": "HTTP_RESPONSE", "description": "Return profile to client"},
@@ -726,6 +992,7 @@ resultMap.put("ssn", SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.
       {
         "flow_id": "FLOW_001",
         "flow_name": "Member Export to External API",
+        "sql_query_id": "MemberMapper.selectById",
         "direction": "DB_TO_OUTBOUND",
         "data_source": {"type": "DB", "description": "SELECT member data (encrypted in DB)"},
         "data_sink": {"type": "EXTERNAL_API", "description": "Partner system API expects plaintext"},
@@ -767,6 +1034,7 @@ resultMap.put("ssn", SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.
       {
         "flow_id": "FLOW_001",
         "flow_name": "External Customer Import",
+        "sql_query_id": "ExternalCustomerMapper.insert",
         "direction": "INBOUND_TO_DB",
         "data_source": {"type": "EXTERNAL_API", "description": "Partner system sends data via webhook (plaintext)"},
         "data_sink": {"type": "DB", "description": "INSERT into external_customer table"},
@@ -831,6 +1099,7 @@ resultMap.put("ssn", SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.
       {
         "flow_id": "FLOW_001",
         "flow_name": "Customer Search with Encrypted WHERE",
+        "sql_query_id": "CustomerMapper.selectByName",
         "direction": "BIDIRECTIONAL",
         "INBOUND_TO_DB": {
           "data_source": {"type": "HTTP_REQUEST", "description": "Search parameter (name) from user input"},
@@ -893,6 +1162,7 @@ resultMap.put("ssn", SliEncryptionUtil.decrypt(0, SliEncryptionConstants.Policy.
       {
         "flow_id": "FLOW_001",
         "flow_name": "Update BirthDt by Name",
+        "sql_query_id": "CustomerMapper.updateBirthDtByName",
         "direction": "INBOUND_TO_DB",
         "data_source": {"type": "HTTP_REQUEST", "description": "Client sends name (search) and newBirthDt (update value)"},
         "data_sink": {"type": "DB", "description": "UPDATE customer table"},
@@ -967,11 +1237,14 @@ for (EmpVO vo : empList) {
 Based on the information above:
 
 1. **For each call chain in call_stacks**, find the matching query in mapping_info
-2. **Use `command_type`** and mapping location to determine ENCRYPT/DECRYPT action
-3. **Use `java_field`, `getter`, `setter`** from crypto_fields to generate accurate code patterns
-4. **Output modification instructions** for each flow in JSON format
-5. **SKIP** flows that don't involve the target table's encryption columns
+2. **Check `crypto_fields` first** - if BOTH input_mapping AND output_mapping have empty crypto_fields → `action: "SKIP"`
+3. **Use `command_type`** and mapping location to determine ENCRYPT/DECRYPT action
+4. **Use `java_field`, `getter`, `setter`** from crypto_fields to generate accurate code patterns
+5. **Output modification instructions** for each flow in JSON format
 
-**Remember**: Focus on the target table. Only include modification instructions for operations that interact with the target table.
+**★★★ CRITICAL REMINDER ★★★**
+- **Trust Phase 1 results**: If `crypto_fields` is empty, the query does NOT need encryption/decryption
+- **DO NOT invent fields**: Only use fields explicitly listed in `crypto_fields`
+- **SKIP when appropriate**: Empty `crypto_fields` means `action: "SKIP"`
 
 **REMINDER: Output ONLY the JSON object. Start directly with `{` and end with `}`. No other text allowed.**

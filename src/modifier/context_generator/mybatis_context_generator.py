@@ -1,14 +1,12 @@
 import logging
-import os
 from typing import List, Dict, Optional
-from models.table_access_info import TableAccessInfo
 from pathlib import Path
 
 from modifier.context_generator.base_context_generator import BaseContextGenerator
 from models.modification_context import ModificationContext
 from parser.java_ast_parser import JavaASTParser
 
-logger = logging.getLogger("applycrypto.context_generator")
+logger = logging.getLogger(__name__)
 
 
 class MybatisContextGenerator(BaseContextGenerator):
@@ -20,28 +18,6 @@ class MybatisContextGenerator(BaseContextGenerator):
 
     # VO 파일 최대 토큰 예산 (80k = 128k 모델의 ~62%, 출력용 48k 여유)
     MAX_VO_TOKENS = 80000
-
-    def _calculate_token_size(self, text: str) -> int:
-        """
-        텍스트의 토큰 크기를 계산합니다.
-
-        tiktoken 라이브러리가 있으면 정확히 계산하고,
-        없으면 문자 4개당 1토큰으로 근사합니다.
-
-        Args:
-            text: 토큰 크기를 계산할 텍스트
-
-        Returns:
-            int: 추정 토큰 수
-        """
-        try:
-            import tiktoken
-
-            encoder = tiktoken.encoding_for_model("gpt-4")
-            return len(encoder.encode(text))
-        except Exception:
-            # tiktoken 없으면 근사값 사용 (4문자 = 1토큰)
-            return len(text) // 4
 
     def _select_vo_files_by_token_budget(
         self,
@@ -76,15 +52,6 @@ class MybatisContextGenerator(BaseContextGenerator):
                     if current_tokens + file_tokens <= max_tokens:
                         selected_files.append(matched)
                         current_tokens += file_tokens
-                        logger.debug(
-                            f"VO 선택: {Path(matched).name} "
-                            f"({file_tokens:,} tokens, 누적: {current_tokens:,})"
-                        )
-                    else:
-                        logger.info(
-                            f"VO 토큰 예산 초과로 제외: {Path(matched).name} "
-                            f"({file_tokens:,} tokens, 현재 누적: {current_tokens:,})"
-                        )
                 except Exception as e:
                     logger.warning(f"VO 파일 읽기 실패: {matched} - {e}")
 
@@ -95,7 +62,7 @@ class MybatisContextGenerator(BaseContextGenerator):
         return selected_files
 
     def _match_import_to_file_path(
-        self, import_statement: str, target_files: List[str]
+        self, import_statement: str, target_files: List[str], allow_impl_match: bool = False
     ) -> Optional[str]:
         """
         import 문과 일치하는 파일 경로를 찾습니다.
@@ -103,6 +70,8 @@ class MybatisContextGenerator(BaseContextGenerator):
         Args:
             import_statement: import 문 (예: "com.example.service.UserService")
             target_files: 대상 파일 목록
+            allow_impl_match: True면 인터페이스-구현체 매칭 허용
+                             (예: UserService import → UserServiceImpl.java 매칭)
 
         Returns:
             Optional[str]: 일치하는 파일 경로, 없으면 None
@@ -110,13 +79,20 @@ class MybatisContextGenerator(BaseContextGenerator):
         # import 문에서 클래스명 추출 (마지막 부분)
         class_name = import_statement.split(".")[-1]
 
-        # 대상 파일 중에서 클래스명과 일치하는 파일 찾기
+        # 1차: 정확한 매칭 시도
         for file_path in target_files:
-            file_name = os.path.basename(file_path)
-            # 확장자 제거
-            file_stem = os.path.splitext(file_name)[0]
+            file_stem = Path(file_path).stem
             if file_stem == class_name:
                 return file_path
+
+        # 2차: 인터페이스-구현체 매칭 (allow_impl_match=True일 때만)
+        # 예: UserService → UserServiceImpl 매칭
+        if allow_impl_match:
+            for file_path in target_files:
+                file_stem = Path(file_path).stem
+                # 파일명이 import 클래스명으로 시작하고 Impl로 끝나는 경우
+                if file_stem.startswith(class_name) and file_stem.endswith("Impl"):
+                    return file_path
 
         return None
 
@@ -125,7 +101,6 @@ class MybatisContextGenerator(BaseContextGenerator):
         layer_files: Dict[str, List[str]],
         table_name: str,
         columns: List[Dict],
-        table_access_info: Optional[TableAccessInfo] = None,
     ) -> List[ModificationContext]:
         """
         Generates modification contexts based on import relationships between Controller, Service, and Repository layers.
@@ -215,10 +190,11 @@ class MybatisContextGenerator(BaseContextGenerator):
 
                 # 4. Service Layer에 수집되어 있는 파일 목록 중에서
                 # Controller의 import문에 존재하는 파일만 선택해서 파일 그룹에 추가한다
+                # allow_impl_match=True: 인터페이스(UserService) → 구현체(UserServiceImpl) 매칭 허용
                 matched_service_files: List[str] = []
                 for import_stmt in controller_imports:
                     matched_file = self._match_import_to_file_path(
-                        import_stmt, service_files
+                        import_stmt, service_files, allow_impl_match=True
                     )
                     if matched_file:
                         matched_service_files.append(matched_file)
@@ -274,10 +250,6 @@ class MybatisContextGenerator(BaseContextGenerator):
 
             # VO 파일은 context_files로 전달
             vo_files = context_file_groups.get(controller_key, [])
-
-            logger.info(
-                f"Controller '{controller_key}'에 대한 파일 그룹 생성: {len(file_group_paths)}개 파일, {len(vo_files)}개 VO 파일 (context)"
-            )
 
             batches = self.create_batches(
                 file_paths=file_group_paths,

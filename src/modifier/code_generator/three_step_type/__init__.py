@@ -6,11 +6,17 @@ Three-Step Code Generator 모듈
 2단계 (Planning): vo_info를 기반으로 Data Flow 분석 및 수정 지침 생성
 3단계 (Execution): 수정 지침에 따라 실제 코드 생성
 
-CCS 프로젝트의 경우 ThreeStepCCSCodeGenerator를 사용하여
-VO 파일 대신 resultMap 기반 필드 매핑을 사용합니다.
+CCS 프로젝트의 경우:
+- ThreeStepCCSCodeGenerator: VO 파일 대신 resultMap 기반 필드 매핑 사용
+- ThreeStepCCSBatchCodeGenerator: BAT.java + BATVO + XML 데이터 흐름 분석
 """
 
+from .three_step_ccs_batch_code_generator import ThreeStepCCSBatchCodeGenerator
 from .three_step_ccs_code_generator import ThreeStepCCSCodeGenerator
 from .three_step_code_generator import ThreeStepCodeGenerator
 
-__all__ = ["ThreeStepCodeGenerator", "ThreeStepCCSCodeGenerator"]
+__all__ = [
+    "ThreeStepCodeGenerator",
+    "ThreeStepCCSCodeGenerator",
+    "ThreeStepCCSBatchCodeGenerator",
+]

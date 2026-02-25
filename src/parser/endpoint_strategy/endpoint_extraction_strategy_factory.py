@@ -108,6 +108,22 @@ class EndpointExtractionStrategyFactory:
                 f"framework_type '{framework_type}'는 아직 구현되지 않았습니다."
             )
 
+        elif framework_type == "anyframe_banka":
+            from .anyframe_sarangon_endpoint_extraction import AnyframeSarangOnEndpointExtraction
+
+            return AnyframeSarangOnEndpointExtraction(
+                java_parser=java_parser, cache_manager=cache_manager
+            )
+
+        elif framework_type == "BatBanka":
+            from .anyframe_bnk_batch_endpoint_extraction import (
+                AnyframeBNKBatchEndpointExtraction,
+            )
+
+            return AnyframeBNKBatchEndpointExtraction(
+                java_parser=java_parser, cache_manager=cache_manager
+            )
+
         elif framework_type == "anyframe_ccs_batch":
             from .anyframe_ccs_batch_endpoint_extraction import (
                 AnyframeCCSBatchEndpointExtraction,
@@ -124,6 +140,6 @@ class EndpointExtractionStrategyFactory:
                 f"Anyframe, AnyframeSarangOn, AnyframeSarangonBatch, "
                 f"AnyframeOld, AnyframeEtc, AnyframeCCS, "
                 f"SpringBatQrts, AnyframeBatSarangOn, AnyframeBatEtc, "
-                f"anyframe_ccs_batch"
+                f"anyframe_banka, BatBanka, anyframe_ccs_batch"
             )
 

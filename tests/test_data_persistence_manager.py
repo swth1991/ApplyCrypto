@@ -168,7 +168,7 @@ def test_save_and_load_table_access_info(persistence_manager):
     table_access = [
         TableAccessInfo(
             table_name="EMPLOYEE",
-            columns=["NAME", "JUMIN_NUMBER"],
+            columns=[{"name": "NAME", "new_column": False}, {"name": "JUMIN_NUMBER", "new_column": False}],
             access_files=["EmployeeMapper.xml", "EmployeeDTO.java"],
             query_type="SELECT",
         )
@@ -180,7 +180,7 @@ def test_save_and_load_table_access_info(persistence_manager):
 
     assert len(loaded) == 1
     assert loaded[0].table_name == "EMPLOYEE"
-    assert "NAME" in loaded[0].columns
+    assert any(col["name"] == "NAME" for col in loaded[0].columns)
 
 
 def test_save_and_load_modification_records(persistence_manager):

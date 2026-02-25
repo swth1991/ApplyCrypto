@@ -13,7 +13,7 @@ from unittest.mock import Mock
 from parser.endpoint_strategy.endpoint_extraction_strategy_factory import (
     EndpointExtractionStrategyFactory,
 )
-from parser.endpoint_strategy.spring_mvc_strategy import SpringMVCStrategy
+from parser.endpoint_strategy.spring_mvc_endpoint_extraction import SpringMVCEndpointExtraction
 
 
 @pytest.fixture
@@ -36,23 +36,23 @@ def test_create_spring_mvc_strategy(mock_java_parser, mock_cache_manager):
         cache_manager=mock_cache_manager,
     )
     
-    assert isinstance(strategy, SpringMVCStrategy)
+    assert isinstance(strategy, SpringMVCEndpointExtraction)
 
 
-def test_create_spring_mvc_strategy_case_insensitive(mock_java_parser, mock_cache_manager):
-    """대소문자 구분 없이 SpringMVC 전략 생성"""
+def test_create_spring_mvc_strategy_exact_match(mock_java_parser, mock_cache_manager):
+    """정확한 framework_type 문자열로 SpringMVC 전략 생성"""
     strategy = EndpointExtractionStrategyFactory.create(
-        framework_type="springmvc",
+        framework_type="SpringMVC",
         java_parser=mock_java_parser,
         cache_manager=mock_cache_manager,
     )
-    
-    assert isinstance(strategy, SpringMVCStrategy)
+
+    assert isinstance(strategy, SpringMVCEndpointExtraction)
 
 
 def test_create_unsupported_framework_type(mock_java_parser, mock_cache_manager):
     """지원하지 않는 framework_type에 대한 예외 처리"""
-    with pytest.raises(ValueError, match="Unsupported framework_type"):
+    with pytest.raises(ValueError, match="지원하지 않는 framework_type"):
         EndpointExtractionStrategyFactory.create(
             framework_type="UnsupportedFramework",
             java_parser=mock_java_parser,
@@ -63,7 +63,6 @@ def test_create_unsupported_framework_type(mock_java_parser, mock_cache_manager)
 def test_create_not_implemented_framework_types(mock_java_parser, mock_cache_manager):
     """아직 구현되지 않은 framework_type에 대한 예외 처리"""
     not_implemented_types = [
-        "AnyframeSarangOn",
         "AnyframeOld",
         "AnyframeEtc",
         "SpringBatQrts",

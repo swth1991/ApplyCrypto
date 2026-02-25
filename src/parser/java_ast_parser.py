@@ -118,7 +118,7 @@ class JavaASTParser:
         import logging
 
         self.parser = Parser(JAVA_LANGUAGE)
-        self.logger = logging.getLogger("applycrypto")
+        self.logger = logging.getLogger(__name__)
         # cache_manager가 없으면 임시 디렉터리에 생성
         if cache_manager is None:
             from tempfile import mkdtemp
@@ -128,12 +128,16 @@ class JavaASTParser:
         else:
             self.cache_manager = cache_manager
 
-    def parse_file(self, file_path: Path) -> Tuple[Optional[Tree], Optional[str]]:
+    def parse_file(
+        self, file_path: Path, remove_comments: bool = True
+    ) -> Tuple[Optional[Tree], Optional[str]]:
         """
         Java 파일을 파싱하여 AST로 변환
 
         Args:
             file_path: Java 파일 경로 (Path 객체 또는 문자열)
+            remove_comments: True이면 파싱 전 주석 제거 (기본값).
+                False이면 원본 그대로 파싱하여 라인 번호가 원본 파일과 일치합니다.
 
         Returns:
             Tuple[Optional[Tree], Optional[str]]: (AST 트리, 에러 메시지)
@@ -146,9 +150,11 @@ class JavaASTParser:
             else:
                 file_path = Path(file_path)
 
-            # cached_ast = self.cache_manager.get_cached_result(file_path)
-            # if cached_ast:
-            #     return cached_ast, None
+            # 캐시 확인 (remove_comments=True일 때만 — False일 때는 캐시 키 충돌 방지)
+            if remove_comments:
+                cached_ast = self.cache_manager.get_cached_result(file_path)
+                if cached_ast:
+                    return cached_ast, None
 
             # 파일 읽기 (여러 인코딩 시도)
             source_code = None
@@ -172,11 +178,16 @@ class JavaASTParser:
                     f"파일을 읽을 수 없습니다: 지원되는 인코딩을 찾을 수 없습니다 (시도한 인코딩: {', '.join(encodings)})",
                 )
 
-            # 주석 제거
-            source_code = JavaUtils.remove_java_comments(source_code)
+            # 주석 제거 (플래그에 따라)
+            if remove_comments:
+                source_code = JavaUtils.remove_java_comments(source_code)
 
             # 파싱
             tree = self.parser.parse(bytes(source_code, "utf8"))
+
+            # 캐시 저장 (remove_comments=True일 때만)
+            if remove_comments:
+                self.cache_manager.set_cached_result(file_path, tree)
 
             return tree, None
 
@@ -184,44 +195,6 @@ class JavaASTParser:
             return None, f"파일을 찾을 수 없습니다: {file_path}"
         except Exception as e:
             return None, f"파싱 중 오류 발생: {str(e)}"
-
-    def get_classes(self, file_path: Path) -> Tuple[List[ClassInfo], Optional[str]]:
-        """
-        Java 파일에서 클래스 정보를 추출 (캐싱 지원)
-
-        Args:
-            file_path: Java 파일 경로 (Path 객체 또는 문자열)
-
-        Returns:
-            Tuple[List[ClassInfo], Optional[str]]: (클래스 정보 목록, 에러 메시지)
-        """
-        # Path 객체로 변환
-        if hasattr(file_path, "path"):
-            file_path = Path(file_path.path)
-        else:
-            file_path = Path(file_path)
-
-        # 1. 캐시된 클래스 정보 확인 (접미사 제거 -> 기본 캐시 키 사용)
-        cached_classes = self.cache_manager.get_cached_result(file_path, namespace="ast_parser")
-        if cached_classes is not None:
-            return cached_classes, None
-
-        # 2. 캐시 없으면 파싱 수행
-        tree, error = self.parse_file(file_path)
-        if error:
-            return [], error
-        
-        if not tree:
-            return [], "파싱된 트리가 없습니다."
-
-        # 3. 클래스 정보 추출
-        classes = self.extract_class_info(tree, file_path)
-
-        # 4. 결과 캐싱 (접미사 제거 -> 기본 캐시 키 사용)
-        # ClassInfo 객체들은 pickle 가능하므로 디스크에 저장됨
-        self.cache_manager.set_cached_result(file_path, classes, namespace="ast_parser")
-
-        return classes, None
 
     def extract_class_info(self, tree: Tree, file_path: Path) -> List[ClassInfo]:
         """
@@ -522,7 +495,7 @@ class JavaASTParser:
     ) -> Optional[Method]:
         """
         메서드 정보 추출
-        
+
         Args:
             node: 메서드 선언 노드
             class_name: 클래스명
@@ -539,7 +512,6 @@ class JavaASTParser:
             file_path=str(file_path),
             line_number=node.start_point[0] + 1,
             end_line_number=node.end_point[0] + 1,
-            body=node.text.decode("utf8") # Added body content
         )
 
         # 메서드 어노테이션 및 접근 제어자

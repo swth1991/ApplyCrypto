@@ -2,7 +2,7 @@ import json
 import os
 import streamlit as st
 from pathlib import Path
-from config.config_manager import load_config, ConfigurationError
+from config.config_manager import load_config
 
 from ui_app.tabs import table_detail, sql_detail, call_graph_view
 

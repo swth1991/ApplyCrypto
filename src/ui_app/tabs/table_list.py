@@ -1,5 +1,5 @@
 import streamlit as st
-import os
+from pathlib import Path
 
 def render_table_list(data):
     st.header("테이블 접근 정보")
@@ -32,7 +32,7 @@ def render_table_list(data):
             if access_files:
                 st.markdown("**Access Files:**")
                 for file in access_files:
-                    st.text(f"- {os.path.basename(file)}")
+                    st.text(f"- {Path(file).name}")
 
             # SQL Queries Summary Link
             st.markdown("### SQL Queries")

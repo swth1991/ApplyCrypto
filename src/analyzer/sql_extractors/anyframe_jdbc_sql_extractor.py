@@ -232,7 +232,8 @@ class AnyframeJDBCSQLExtractor(SQLExtractor):
                 # method body 내에서 대소문자 구분 없이 SQL을 포함하는 StringBuilder 변수 찾기
                 # StringBuilder 변수 선언 패턴 (대소문자 구분 없음)
                 # 변수명에 "sql"이 포함된 경우만 찾기
-                stringbuilder_pattern = r"(?i)StringBuilder\s+(\w*[Ss][Qq][Ll]\w*)\s*=\s*new\s+StringBuilder\s*\(\)"
+                # 괄호 안에 인자가 있어도 매칭 (예: new StringBuilder(), new StringBuilder(856))
+                stringbuilder_pattern = r'(?i)StringBuilder\s+(\w*[Ss][Qq][Ll]\w*)\s*=\s*new\s+StringBuilder\s*\([^)]*\)'
                 sb_matches = re.finditer(stringbuilder_pattern, method_body)
 
                 for sb_match in sb_matches:

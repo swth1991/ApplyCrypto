@@ -24,7 +24,7 @@ from modifier.llm.llm_provider import LLMProvider
 
 from ..multi_step_base import BaseMultiStepCodeGenerator
 
-logger = logging.getLogger("applycrypto")
+logger = logging.getLogger(__name__)
 
 
 class ThreeStepCodeGenerator(BaseMultiStepCodeGenerator):
@@ -82,6 +82,10 @@ class ThreeStepCodeGenerator(BaseMultiStepCodeGenerator):
             execution_template_name = "execution_template_full.md"
         elif self.config.generate_type == "diff":
             execution_template_name = "execution_template_diff.md"
+        elif self.config.generate_type == "method":
+            # method 모드는 서브클래스(ThreeStepBankaCodeGenerator)가
+            # _get_execution_template_path()를 오버라이드하여 전용 템플릿 사용
+            execution_template_name = "execution_template_full.md"
         else:
             raise NotImplementedError(
                 f"Unsupported generate_type for ThreeStepCodeGenerator: {self.config.generate_type}"

@@ -37,19 +37,21 @@ This project uses the **KSign** encryption framework with `ksignUtil`:
 | **Date of Birth (생년월일)**   | `dob`       | `"P018"`  | dob, dateOfBirth, birthDate, birthday, dayOfBirth, birthDt, BIRTH_DT                     |
 | **Resident Number (주민등록번호)** | `rrn`   | `"P019"`  | jumin, juminNumber, ssn, residentNumber, juminNo, JUMIN_NO, residentNo, rrn              |
 
-### ★★★ CRITICAL: All columns in table_info ARE encryption targets ★★★
+### ★★★ CRITICAL: Role of table_info vs mapping_info ★★★
 
-**Every column listed in `table_info.columns` has been explicitly configured by the user as an encryption target.**
+**`table_info.columns`**: Project-level configuration - columns that MAY need encryption/decryption
+- Used to determine the correct `policy_id` (via `encryption_code` or `column_type`)
+- Does NOT mean every query must encrypt/decrypt these columns
 
-- **DO NOT skip** any column that appears in `table_info.columns`
-- `table_info.columns[].name` is the **DB column name** (e.g., `gvnm`)
-- The corresponding **Java field name/alias** (e.g., `aenam`) is identified in Phase 1's `mapping_info`
-- Even if the DB column name doesn't match common patterns, it IS an encryption target
-- Use `column_type` or `encryption_code` from table_info to determine the correct policy_id
+**`mapping_info.crypto_fields`**: Query-level analysis result from Phase 1 - columns that ACTUALLY need encryption/decryption for each specific query
+- **THIS IS THE SOURCE OF TRUTH** for what to encrypt/decrypt
+- If `crypto_fields` is empty for a query → that query does NOT need encryption/decryption for this table
 
 **Important Distinction:**
-- `table_info.columns`: Contains **DB column names** configured by user (e.g., `gvnm`)
-- `mapping_info.crypto_fields`: Contains **Java field mappings** analyzed in Phase 1 (e.g., `gvnm` → `aenam`)
+- `table_info.columns`: Reference for policy_id lookup (e.g., `gvnm` → `column_type: "name"` → `"P017"`)
+- `mapping_info.crypto_fields`: **Actual fields to process** - analyzed in Phase 1 (e.g., `gvnm` → `java_field: "aenam"`)
+
+**⚠️ DO NOT INVENT crypto_fields!** If Phase 1 returned empty `crypto_fields` for a query, trust it. Do NOT add fields just because they exist in `table_info.columns`.
 
 ---
 
@@ -83,11 +85,12 @@ Each column in `table_info.columns` may contain:
 
 **Instructions:**
 
-1. **ALL columns in table_info.columns ARE encryption targets** - do NOT skip any of them
-2. Use `encryption_code` or `column_type` to determine the correct policy_id
+1. **Trust `mapping_info.crypto_fields`** - this is Phase 1's analysis result. If it's empty, NO encryption/decryption needed for that query
+2. Use `table_info.columns[]` to look up `encryption_code` or `column_type` for determining policy_id
 3. Analyze queries from `mapping_info.queries[]` (NOT raw SQL - SQL was analyzed in Phase 1)
 4. Only analyze methods that are part of call chains in `call_stacks`
 5. Generate modification instructions ONLY for files in `source_files`
+6. **If `crypto_fields` is empty** → output `action: "SKIP"` with appropriate reason
 
 **IMPORTANT: SQL queries are NOT provided directly in this phase.**
 Use `mapping_info` from Phase 1 which contains pre-analyzed query information including:
@@ -98,6 +101,13 @@ Use `mapping_info` from Phase 1 which contains pre-analyzed query information in
 ### Data Mapping Summary (★ Pre-analyzed from Phase 1)
 
 The following `mapping_info` was extracted in Phase 1 and contains all SQL query analysis results.
+
+**★★★ CRITICAL: Trust Phase 1 Results ★★★**
+
+- If `input_mapping.crypto_fields` is empty → NO encryption needed for input
+- If `output_mapping.crypto_fields` is empty → NO decryption needed for output
+- If BOTH are empty → `action: "SKIP"` (this query doesn't involve target columns)
+- **DO NOT invent or add fields** that weren't identified in Phase 1
 
 **mapping_info Structure:**
 
@@ -183,11 +193,14 @@ Call path from controller to SQL:
 **For each call chain in call_stacks**, analyze the data flow:
 
 1. Find the matching SQL query in `mapping_info.queries` by matching `query_id` with DAO method.
-2. Use `command_type` and mapping location to determine crypto action:
+2. **Check if `crypto_fields` is empty:**
+   - If BOTH `input_mapping.crypto_fields` AND `output_mapping.crypto_fields` are empty → `action: "SKIP"`
+   - **DO NOT assume** encryption/decryption is needed just because the query touches the target table
+3. If `crypto_fields` has entries, use `command_type` and mapping location to determine crypto action:
    - `INSERT/UPDATE` command with `input_mapping.crypto_fields` → **ENCRYPT** before DAO call
    - `SELECT` command with `output_mapping.crypto_fields` → **DECRYPT** after DAO returns
    - `SELECT` command with `input_mapping.crypto_fields` (WHERE clause) → **ENCRYPT** search param first
-3. Match `crypto_fields[].column_name` with `table_info.columns[].name` to verify encryption target.
+4. Use `table_info.columns[]` to look up `encryption_code` or `column_type` for policy_id.
 
 ### 2. Using Data Mapping (from mapping_info)
 
@@ -278,6 +291,7 @@ employeeDao.insert(vo);
       {
         "flow_id": "FLOW_001",
         "flow_name": "User Registration Flow",
+        "sql_query_id": "com.example.mapper.UserMapper.insertUser",
         "direction": "INBOUND_TO_DB | DB_TO_OUTBOUND | BIDIRECTIONAL",
         "data_source": {
           "type": "HTTP_REQUEST | SESSION | DB | EXTERNAL_API",
@@ -315,6 +329,7 @@ For `direction: "BIDIRECTIONAL"` (e.g., search with encrypted WHERE + decrypted 
 {
   "flow_id": "FLOW_001",
   "flow_name": "Customer Search with Encrypted WHERE",
+  "sql_query_id": "com.example.mapper.CustomerMapper.selectByName",
   "direction": "BIDIRECTIONAL",
   "INBOUND_TO_DB": {
     "data_source": {
@@ -346,6 +361,7 @@ For `direction: "BIDIRECTIONAL"` (e.g., search with encrypted WHERE + decrypted 
 | Field               | Description                                              | Example                                                       |
 | ------------------- | -------------------------------------------------------- | ------------------------------------------------------------- |
 | `flow_id`           | Reference to data_flow_analysis.flows[].flow_id          | `FLOW_001`, `FLOW_002`                                        |
+| `sql_query_id`      | Matching query_id from mapping_info.queries[]            | `com.example.mapper.UserMapper.insertUser`                    |
 | `file_name`         | File name to modify                                      | `UserService.java`, `EmpController.java`                      |
 | `target_method`     | Method name to modify                                    | `saveUser`, `getUserList`                                     |
 | `action`            | Action to perform                                        | `ENCRYPT`, `DECRYPT`, `ENCRYPT_THEN_DECRYPT`, `SKIP`          |
@@ -366,14 +382,15 @@ For `direction: "BIDIRECTIONAL"` (e.g., search with encrypted WHERE + decrypted 
 
 ### Important Notes
 
-1. **When action is SKIP**: Specify in `reason` which flow (flow_id) this refers to and why no modification is needed
-2. **target_properties**: Array of `java_field` names (strings) from `crypto_fields`. Use the Java field name, not DB column name.
-3. **insertion_point**: Describe specifically so code can be inserted in the next step
-4. **code_pattern_hint**:
+1. **sql_query_id**: Copy the exact `query_id` from `mapping_info.queries[]` that corresponds to this flow. Match the DAO method in `call_stacks` with `query_id` in `mapping_info`. If no DB access (e.g., Session → HTTP_RESPONSE), use `null`.
+2. **When action is SKIP**: Specify in `reason` which flow (flow_id) this refers to and why no modification is needed
+3. **target_properties**: Array of `java_field` names (strings) from `crypto_fields`. Use the Java field name, not DB column name.
+4. **insertion_point**: Describe specifically so code can be inserted in the next step
+5. **code_pattern_hint**:
    - For VO with getter/setter: Use them directly (e.g., `vo.setEmpNm(ksignUtil.ksignEnc("P017", vo.getEmpNm()));`)
    - For VO without getter/setter: Infer from java_field (e.g., `java_field: "empNm"` → `vo.setEmpNm(...)`)
    - For Map: Use java_field as key (e.g., `map.put("ssn", ksignUtil.ksignDec("P019", (String)map.get("ssn")));`)
-5. **Use mapping_info.crypto_fields**: Reference `java_field`, and `getter`/`setter` (if present) for accurate code patterns
+6. **Use mapping_info.crypto_fields**: Reference `java_field`, and `getter`/`setter` (if present) for accurate code patterns
 
 ---
 
@@ -497,6 +514,7 @@ When `mapping_info` shows a sensitive column in BOTH `input_mapping` AND `output
       {
         "flow_id": "FLOW_001",
         "flow_name": "Employee Registration (INSERT)",
+        "sql_query_id": "EmpMapper.insertEmp",
         "direction": "INBOUND_TO_DB",
         "data_source": {"type": "HTTP_REQUEST", "description": "Client POST request"},
         "data_sink": {"type": "DB", "description": "INSERT into TB_EMP"},
@@ -506,6 +524,7 @@ When `mapping_info` shows a sensitive column in BOTH `input_mapping` AND `output
       {
         "flow_id": "FLOW_002",
         "flow_name": "Employee Retrieval (SELECT)",
+        "sql_query_id": "EmpMapper.selectEmp",
         "direction": "DB_TO_OUTBOUND",
         "data_source": {"type": "DB", "description": "SELECT from TB_EMP"},
         "data_sink": {"type": "HTTP_RESPONSE", "description": "JSON response"},
@@ -579,6 +598,7 @@ resultMap.put("ssn", ksignUtil.ksignDec("P019", (String)resultMap.get("ssn")));
       {
         "flow_id": "FLOW_001",
         "flow_name": "Audit Log Insert (Session → DB)",
+        "sql_query_id": "AuditMapper.insertLog",
         "direction": "INBOUND_TO_DB",
         "data_source": {"type": "SESSION", "description": "User name from HTTP session (already plaintext)"},
         "data_sink": {"type": "DB", "description": "INSERT into audit_log table"},
@@ -622,6 +642,7 @@ resultMap.put("ssn", ksignUtil.ksignDec("P019", (String)resultMap.get("ssn")));
       {
         "flow_id": "FLOW_001",
         "flow_name": "User Login (DB → Session)",
+        "sql_query_id": "UserMapper.selectByLoginId",
         "direction": "DB_TO_OUTBOUND",
         "data_source": {"type": "DB", "description": "SELECT user info (encrypted in DB)"},
         "data_sink": {"type": "SESSION", "description": "Store user info in HTTP session (as plaintext)"},
@@ -647,6 +668,60 @@ resultMap.put("ssn", ksignUtil.ksignDec("P019", (String)resultMap.get("ssn")));
 
 ---
 
+### Example: Empty crypto_fields (Phase 1 found no sensitive columns) ★ CRITICAL
+
+**Scenario:**
+- SQL: `SELECT emp_id, dept_code FROM TB_EMP WHERE emp_id = #{empId}`
+- Method chain: `EmpController.getDept()` → `EmpService.getDeptByEmpId()` → `EmpDao.selectDept()`
+- Note: Phase 1 analyzed this query and found NO sensitive columns (emp_nm, birth_dt not in SELECT)
+
+**mapping_info from Phase 1:**
+```json
+{
+  "query_id": "EmpMapper.selectDept",
+  "command_type": "SELECT",
+  "input_mapping": { "crypto_fields": [] },
+  "output_mapping": { "crypto_fields": [] }
+}
+```
+
+**Key Point:** Both `crypto_fields` are empty → **SKIP**. Do NOT invent encryption/decryption for columns not in Phase 1 result!
+
+**Output:**
+```json
+{
+  "data_flow_analysis": {
+    "overview": "Query retrieves non-sensitive columns (emp_id, dept_code). No encryption target columns involved.",
+    "flows": [
+      {
+        "flow_id": "FLOW_001",
+        "flow_name": "Get Department by EmpId",
+        "sql_query_id": "EmpMapper.selectDept",
+        "direction": "DB_TO_OUTBOUND",
+        "data_source": {"type": "DB", "description": "SELECT non-sensitive columns"},
+        "data_sink": {"type": "HTTP_RESPONSE", "description": "Return dept info"},
+        "path": "EmpController → EmpService → EmpDao → DB",
+        "sensitive_columns": []
+      }
+    ]
+  },
+  "modification_instructions": [
+    {
+      "flow_id": "FLOW_001",
+      "file_name": "EmpService.java",
+      "target_method": "getDeptByEmpId",
+      "action": "SKIP",
+      "reason": "FLOW_001: Phase 1 crypto_fields is empty - query does not involve encryption target columns",
+      "target_properties": [],
+      "insertion_point": "",
+      "code_pattern_hint": ""
+    }
+  ]
+}
+```
+
+---
+
 ### Example: Session to HTTP Response (No crypto needed) ★ IMPORTANT
 
 **Scenario:**
@@ -664,6 +739,7 @@ resultMap.put("ssn", ksignUtil.ksignDec("P019", (String)resultMap.get("ssn")));
       {
         "flow_id": "FLOW_001",
         "flow_name": "Profile from Session (No DB)",
+        "sql_query_id": null,
         "direction": "SESSION_TO_OUTBOUND",
         "data_source": {"type": "SESSION", "description": "User profile stored in session (already plaintext)"},
         "data_sink": {"type": "HTTP_RESPONSE", "description": "Return profile to client"},
@@ -705,6 +781,7 @@ resultMap.put("ssn", ksignUtil.ksignDec("P019", (String)resultMap.get("ssn")));
       {
         "flow_id": "FLOW_001",
         "flow_name": "Member Export to External API",
+        "sql_query_id": "MemberMapper.selectById",
         "direction": "DB_TO_OUTBOUND",
         "data_source": {"type": "DB", "description": "SELECT member data (encrypted in DB)"},
         "data_sink": {"type": "EXTERNAL_API", "description": "Partner system API expects plaintext"},
@@ -746,6 +823,7 @@ resultMap.put("ssn", ksignUtil.ksignDec("P019", (String)resultMap.get("ssn")));
       {
         "flow_id": "FLOW_001",
         "flow_name": "External Customer Import",
+        "sql_query_id": "ExternalCustomerMapper.insert",
         "direction": "INBOUND_TO_DB",
         "data_source": {"type": "EXTERNAL_API", "description": "Partner system sends data via webhook (plaintext)"},
         "data_sink": {"type": "DB", "description": "INSERT into external_customer table"},
@@ -810,6 +888,7 @@ resultMap.put("ssn", ksignUtil.ksignDec("P019", (String)resultMap.get("ssn")));
       {
         "flow_id": "FLOW_001",
         "flow_name": "Customer Search with Encrypted WHERE",
+        "sql_query_id": "CustomerMapper.selectByName",
         "direction": "BIDIRECTIONAL",
         "INBOUND_TO_DB": {
           "data_source": {"type": "HTTP_REQUEST", "description": "Search parameter (name) from user input"},
@@ -872,6 +951,7 @@ resultMap.put("ssn", ksignUtil.ksignDec("P019", (String)resultMap.get("ssn")));
       {
         "flow_id": "FLOW_001",
         "flow_name": "Update BirthDt by Name",
+        "sql_query_id": "CustomerMapper.updateBirthDtByName",
         "direction": "INBOUND_TO_DB",
         "data_source": {"type": "HTTP_REQUEST", "description": "Client sends name (search) and newBirthDt (update value)"},
         "data_sink": {"type": "DB", "description": "UPDATE customer table"},
@@ -902,11 +982,14 @@ resultMap.put("ssn", ksignUtil.ksignDec("P019", (String)resultMap.get("ssn")));
 Based on the information above:
 
 1. **For each call chain in call_stacks**, find the matching query in mapping_info
-2. **Use `command_type`** and mapping location to determine ENCRYPT/DECRYPT action
-3. **Use `java_field`, `getter`, `setter`** from crypto_fields to generate accurate code patterns
-4. **Output modification instructions** for each flow in JSON format
-5. **SKIP** flows that don't involve the target table's encryption columns
+2. **Check `crypto_fields` first** - if BOTH input_mapping AND output_mapping have empty crypto_fields → `action: "SKIP"`
+3. **Use `command_type`** and mapping location to determine ENCRYPT/DECRYPT action
+4. **Use `java_field`, `getter`, `setter`** from crypto_fields to generate accurate code patterns
+5. **Output modification instructions** for each flow in JSON format
 
-**Remember**: Focus on the target table. Only include modification instructions for operations that interact with the target table.
+**★★★ CRITICAL REMINDER ★★★**
+- **Trust Phase 1 results**: If `crypto_fields` is empty, the query does NOT need encryption/decryption
+- **DO NOT invent fields**: Only use fields explicitly listed in `crypto_fields`
+- **SKIP when appropriate**: Empty `crypto_fields` means `action: "SKIP"`
 
 **REMINDER: Output ONLY the JSON object. Start directly with `{` and end with `}`. No other text allowed.**

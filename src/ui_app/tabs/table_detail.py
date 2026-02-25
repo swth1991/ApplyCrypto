@@ -1,5 +1,5 @@
 import streamlit as st
-import os
+from pathlib import Path
 
 def render_table_detail(table_data):
     if not table_data:
@@ -28,7 +28,7 @@ def render_table_detail(table_data):
     if access_files:
         st.markdown("### Access Files")
         for file in access_files:
-            st.text(f"- {os.path.basename(file)}") # Show formatted text for files
+            st.text(f"- {Path(file).name}")
 
     st.divider()
 

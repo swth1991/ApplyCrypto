@@ -23,6 +23,9 @@ python main.py list --callgraph EmpController.login  # Method call chain
 python main.py modify --config config.json --dry-run  # Preview only
 python main.py modify --config config.json            # Apply changes
 
+# Clear analysis results
+python main.py clear  # Remove cached analysis data
+
 # Launch Streamlit UI
 python run_ui.py
 ```
@@ -46,6 +49,13 @@ WATSONX_API_KEY=your_api_key
 WATSONX_PROJECT_ID=your_project_id
 ```
 
+**Note:** Python 3.13 이상이 필요합니다. 가상환경 생성 예시:
+```bash
+python3.13 -m venv .venv
+source .venv/bin/activate  # Linux/Mac
+pip install -r requirements.txt
+```
+
 ## Architecture Overview
 
 ### Layered Architecture Flow
@@ -59,8 +69,10 @@ CLI Layer → Configuration → Collection → Parsing → Analysis → Modifica
 4. **Parsing Layer** (`src/parser/`) → Java AST (tree-sitter), XML Mappers, Call Graph (NetworkX)
 5. **Analysis Layer** (`src/analyzer/`) → DB access patterns via call graph traversal
 6. **Modification Layer** (`src/modifier/`) → LLM-based code generation and patching
+   - **Code Patcher** (`src/modifier/code_patcher/`): `FullSourceCodePatcher` (전체 파일), `DiffCodePatcher` (diff 기반), `PartCodePatcher` (부분), `MethodCodePatcher` (메서드 단위)
 7. **LLM Layer** (`src/modifier/llm/`) → Provider abstraction (WatsonX, OpenAI, Claude)
 8. **Persistence Layer** (`src/persistence/`) → JSON serialization and caching
+9. **Generator Layer** (`src/generator/`) → Report generation and output formatting
 
 ### Key Design Patterns
 
@@ -68,11 +80,19 @@ CLI Layer → Configuration → Collection → Parsing → Analysis → Modifica
 - `LLMProvider`: LLM 프로바이더 추상화 (`src/modifier/llm/`)
 - `EndpointExtractionStrategy`: 프레임워크별 엔드포인트 추출 (`src/parser/endpoint_strategy/`)
 - `SQLExtractor`: SQL 래핑 타입별 추출 전략 (`src/analyzer/sql_extractors/`)
+  - `MyBatisSQLExtractor`, `MyBatisCCSSQLExtractor`, `CCSBatchSQLExtractor`, `BNKBatchSQLExtractor`
+  - `JdbcSQLExtractor`, `JpaSQLExtractor`
+  - `AnyframeJdbcSQLExtractor`, `AnyframeJdbcBatSQLExtractor`
 - `BaseCodeGenerator`: 코드 생성 전략 (`src/modifier/code_generator/`)
-- `ContextGenerator`: 컨텍스트 생성 전략 (`src/modifier/context_generators/`)
+  - `ThreeStepBankaCodeGenerator`: BNK 온라인 전용 (Phase 1 VO 제외, Phase 2 BIZ 메서드만 추출)
+- `BaseMultiStepCodeGenerator`: 다단계 코드 생성 베이스 (`src/modifier/code_generator/multi_step_base/`)
+- `ContextGenerator`: 컨텍스트 생성 전략 (`src/modifier/context_generator/`)
+  - `JdbcContextGenerator`: import 기반 파일 그룹 생성 (`jdbc`)
+  - `AnyframeBankaContextGenerator`: call_stack 기반 파일 그룹 생성 (`jdbc_banka`), `BaseContextGenerator` 직접 상속
+  - 기타: `MybatisContextGenerator` (`mybatis`), `MybatisCCSContextGenerator` (`mybatis_ccs`), `CCSBatchContextGenerator` (`ccs_batch`), `BNKBatchContextGenerator` (`bnk_batch`), `PerLayerContextGenerator` (default)
 
 **Factory Pattern** - 설정 기반 전략 생성:
-- `LLMFactory`, `EndpointExtractionStrategyFactory`, `SQLExtractorFactory`
+- `create_llm_provider()` (`llm_factory.py`), `EndpointExtractionStrategyFactory`, `SQLExtractorFactory`
 - `CodeGeneratorFactory`, `ContextGeneratorFactory`
 
 ### Configuration Schema
@@ -81,13 +101,24 @@ The `config.json` file drives the entire workflow. Key fields:
 
 | Field | Description |
 |-------|-------------|
-| `framework_type` | `SpringMVC`, `AnyframeSarangOn`, `AnyframeCCS`, `anyframe_ccs_batch` 등 |
-| `sql_wrapping_type` | `mybatis`, `mybatis_ccs`, `mybatis_ccs_batch`, `jdbc`, `jpa` |
+| `framework_type` | `SpringMVC`, `AnyframeSarangOn`, `AnyframeOld`, `AnyframeEtc`, `AnyframeCCS`, `SpringBatQrts`, `AnyframeBatSarangOn`, `AnyframeBatEtc`, `anyframe_ccs_batch`, `BatBanka`, `anyframe_banka` |
+| `sql_wrapping_type` | `mybatis`, `mybatis_ccs`, `ccs_batch`, `bnk_batch`, `jdbc`, `jdbc_banka`, `jpa` |
 | `modification_type` | `ControllerOrService`, `ServiceImplOrBiz`, `TypeHandler`, `TwoStep`, `ThreeStep` |
 | `llm_provider` | `watsonx_ai`, `watsonx_ai_on_prem`, `claude_ai`, `openai`, `mock` |
 | `access_tables` | 암호화 대상 테이블/칼럼 목록 |
 
 See `config.example.json` for complete schema with all options.
+
+### CCS Prefix Configuration
+
+AnyframeCCS 프로젝트에서 `ccs_prefix` 옵션으로 유틸리티 클래스 패턴을 지정합니다:
+
+| Prefix | 암호화 유틸 | 마스킹 유틸 | 용도 |
+|--------|-------------|-------------|------|
+| `null` | SliEncryptionUtil 직접 호출 | - | 기본값 |
+| `"BC"` | BCCommUtil | BCMaskingUtil | BC 프로젝트 |
+| `"CP"` | CPCmpgnUtil | CPMaskingUtil | CP 프로젝트 |
+| `"CR"` | CRCommonUtil | CRMaskingUtil | CR 프로젝트 |
 
 ### Call Graph Traversal
 
@@ -147,11 +178,9 @@ Phase 1에서 VO 파일과 SQL 쿼리의 필드 매핑을 먼저 분석하여 Pl
 
 ### Data Persistence
 
-분석 결과는 JSON으로 영속화됩니다:
-- `{project_root}/build/applycrypto_source_files.json`
-- `{project_root}/build/applycrypto_call_graph.json`
-- `{project_root}/build/applycrypto_table_access.json`
-- `{project_root}/build/applycrypto_modification_records.json`
+분석/수정 결과는 대상 프로젝트 내 `.applycrypto/` 디렉토리에 저장됩니다:
+- `{target_project}/.applycrypto/results/` — 수정 결과 (JSON)
+- `{target_project}/.applycrypto/debug/` — 디버그 로그
 
 `CacheManager`는 파싱 결과를 캐싱하여 후속 실행 속도를 높입니다.
 
@@ -162,7 +191,7 @@ Phase 1에서 VO 파일과 SQL 쿼리의 필드 매핑을 먼저 분석하여 Pl
 |------|---------|---------|
 | Analyzers | `*Analyzer` | `DBAccessAnalyzer` |
 | Parsers | `*Parser` | `JavaASTParser` |
-| Generators | `*Generator` | `TwoStepCodeGenerator` |
+| Generators | `*Generator` | `TwoStepCodeGenerator`, `ThreeStepCCSCodeGenerator`, `ThreeStepBankaCodeGenerator` |
 | Extractors | `*Extractor` | `MyBatisSQLExtractor` |
 | Providers | `*Provider` | `WatsonXAIProvider` |
 
@@ -174,24 +203,38 @@ Phase 1에서 VO 파일과 SQL 쿼리의 필드 매핑을 먼저 분석하여 Pl
 4. `config.example.json`에 새 옵션 문서화
 
 ### Template System
-각 코드 생성기는 Jinja2 템플릿을 사용합니다:
-```
-src/modifier/code_generator/
-├── two_step_type/
-│   ├── planning_template.md
-│   └── execution_template.md
-└── three_step_type/
-    ├── data_mapping_template.md   # Phase 1: VO/SQL 매핑
-    ├── planning_template.md       # Phase 2: 수정 지침
-    └── execution_template.md      # Phase 3: 코드 생성
-```
+각 코드 생성기는 Jinja2 템플릿을 사용합니다. 템플릿은 `src/modifier/code_generator/` 하위에 위치합니다.
+
+**디렉토리 구조:**
+- `two_step_type/` — TwoStep 전용 (planning, execution)
+- `three_step_type/` — ThreeStep 전용 (data_mapping, planning, execution + 보조 vo_extraction)
+
+**Three-step 템플릿 명명 규칙:**
+| Phase | 기본 | CCS | CCS Batch | BNK Batch |
+|-------|------|-----|-----------|-----------|
+| Phase 1 | `data_mapping_template.md` | `*_ccs.md` | `*_ccs_batch.md` | `*_bnk_batch.md` |
+| Phase 2 | `planning_template.md` | `*_ccs.md` | `*_ccs_batch.md` | `*_bnk_batch.md` |
+| Phase 3 | `execution_template_full.md` / `*_diff.md` | `*_ccs.md` | `*_ccs_batch.md` | `*_bnk_batch.md` |
+
+`*_name_only.md` 접미사: 이름 필드만 처리하는 경량 버전 (CCS, CCS Batch, BNK Batch 각각 존재)
+
+`execution_template_banka_method.md`: BNK 온라인 메서드 단위 코드 수정 전용 템플릿
 
 주요 템플릿 변수: `{{source_code}}`, `{{table_info}}`, `{{call_chain}}`, `{{mapping_info}}`
 
 ### Error Handling
 - 커스텀 예외: `ConfigurationError`, `CodeGeneratorError`, `PersistenceError`
-- 로거: `logging.getLogger("applycrypto")`
+- 로거: `logging.getLogger("applycrypto.*")` 네임스페이스 또는 `logging.getLogger(__name__)` 혼용
 - 검증: 모든 설정과 데이터 모델에 Pydantic 스키마 사용
+
+## Gotchas
+
+- **테스트 실행 전**: `.env` 파일에 LLM 프로바이더 자격증명이 필요합니다
+- **CCS 프로젝트**: `ccs_prefix` 설정 시 `name_only` 모드와 함께 사용해야 할 수 있음
+- **캐시 문제**: 분석 결과가 이상할 경우 `python main.py clear`로 캐시 초기화
+- **tree-sitter 버전**: Python 3.13에서는 tree-sitter 0.22+ 권장
+- **layer_files 키는 소문자**: `db_access_analyzer._find_upper_layer_files()`에서 `classify_layer()` 반환값을 `.lower()`로 변환하여 저장합니다. `"SVCImpl"` → `"svcimpl"`, `"SVC"` → `"svc"`, `"DEM_DAQ"` → `"dem_daq"` 등. Context Generator에서 `layer_files.get("svc", [])`만 호출하면 `"svcimpl"` 키의 파일은 누락되므로 별도 병합이 필요합니다. 단, SQL Extractor가 직접 추가하는 키(`"Repository"`, `"bat"`, `"batvo"`)는 소문자 변환 없이 원본 그대로 저장됩니다.
+- **parse_file의 remove_comments 플래그**: `JavaASTParser.parse_file(path, remove_comments=False)`로 호출하면 주석 제거 없이 파싱하여 원본 라인 번호를 보존합니다. `remove_comments=False`일 때는 캐시를 사용하지 않습니다 (키 충돌 방지). ThreeStepBankaCodeGenerator의 BIZ 메서드 추출에서 사용합니다.
 
 ## Korean Language Support
 

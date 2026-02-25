@@ -11,7 +11,7 @@ from models.table_access_info import TableAccessInfo
 
 from modifier.code_generator.base_code_generator import BaseCodeGenerator
 
-logger = logging.getLogger("applycrypto.context_generator")
+logger = logging.getLogger(__name__)
 
 
 class BaseContextGenerator(ABC):
@@ -44,6 +44,16 @@ class BaseContextGenerator(ABC):
             List[ModificationContext]: The generated batches of contexts.
         """
         raise NotImplementedError
+
+    def _calculate_token_size(self, text: str) -> int:
+        """텍스트의 토큰 크기를 계산합니다."""
+        try:
+            import tiktoken
+
+            encoder = tiktoken.encoding_for_model("gpt-4")
+            return len(encoder.encode(text))
+        except Exception:
+            return len(text) // 4
 
     def create_batches(
         self,

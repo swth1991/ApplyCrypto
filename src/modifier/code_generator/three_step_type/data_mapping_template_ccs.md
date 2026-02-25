@@ -1,16 +1,14 @@
-# Data Mapping Extraction (Phase 1) - CCS Version (resultMap 기반)
+# Data Mapping Extraction (Phase 1) - CCS Version
 
 ## Role
 
-You are an expert in analyzing DQM.xml resultMap mappings, Java VO classes, and SQL queries.
-Your task is to extract **query-based data mapping information** from the provided SQL queries.
+You are an expert in analyzing DQM.xml resultMap mappings and SQL queries.
+Your task is to extract **query-based data mapping information** from SQL queries.
 
 **Important**:
-
-- This is an **extraction and analysis** task only
-- You are NOT modifying any code
-- Field mappings from `resultMap` tags are already provided with each query - use them directly
-- You are providing structured information to help the next phase (Planning) understand how data flows between Java and DB
+- This is an **extraction and analysis** task only - you are NOT modifying any code
+- Field mappings from `resultMap` tags are provided with each query - use them to determine Java field names
+- You are providing structured information for the next phase (Planning)
 
 ---
 
@@ -21,21 +19,17 @@ Your task is to extract **query-based data mapping information** from the provid
 {{ table_info }}
 
 **table_info.columns Structure:**
-
-Each column in `table_info.columns` may contain:
-- `name`: Column name (always present) - **this is the DB column name to match in SQL**
+- `name`: Column name (always present) - **this is the DB column to find in SQL**
 - `new_column`: Whether this is a new column (boolean)
 - `column_type`: Type of sensitive data - `"name"`, `"dob"`, or `"rrn"` (optional)
-- `encryption_code`: Direct policy constant - e.g., `"SliEncryptionConstants.Policy.NAME"` (optional)
+- `encryption_code`: Direct policy constant (optional)
 
 **CRITICAL: Every column listed in table_info.columns IS an encryption target.**
-Do NOT skip any column. Even if the column name seems unusual (e.g., `gvnm`, `aenam`), it must be included in `crypto_fields`.
+Do NOT skip any column. Even if the column name seems unusual, it must be included in `crypto_fields`.
 
 ---
 
-## SQL Queries with Relevant Field Mappings
-
-Below are the SQL queries to analyze. Each query includes **only the relevant field mappings** for the target columns listed above. Use these mappings to determine the exact Java field names.
+## SQL Queries with Field Mappings
 
 {{ sql_queries_with_mappings }}
 
@@ -44,7 +38,6 @@ Below are the SQL queries to analyze. Each query includes **only the relevant fi
 ## Output Format (★★★ JSON ONLY ★★★)
 
 **CRITICAL OUTPUT RULES:**
-
 1. Output **ONLY** valid JSON - no explanations, no markdown, no comments
 2. Do **NOT** include ```json or ``` markers
 3. Do **NOT** add trailing commas
@@ -67,11 +60,11 @@ Below are the SQL queries to analyze. Each query includes **only the relevant fi
       },
       "output_mapping": {
         "type_category": "PRIMITIVE | MAP | VO | NONE",
-        "class_name": "HashMap",
+        "class_name": "UserVO",
         "crypto_fields": [
           {
-            "column_name": "jumin_no",
-            "java_field": "juminNo"
+            "column_name": "USER_NM",
+            "java_field": "userNm"
           }
         ]
       }
@@ -84,17 +77,15 @@ Below are the SQL queries to analyze. Each query includes **only the relevant fi
 
 ## Field Descriptions
 
-| Field           | Description                                                                          |
-| --------------- | ------------------------------------------------------------------------------------ |
-| `query_id`      | Unique ID of the query (e.g., `com.example.mapper.UserMapper.selectUser`)            |
-| `command_type`  | SQL command type: `SELECT`, `INSERT`, `UPDATE`, `DELETE`                             |
-| `sql_summary`   | Brief description of what the query does with target columns                         |
-| `type_category` | Type of Java object: `VO`, `MAP`, `PRIMITIVE`, `NONE`                                |
-| `class_name`    | Simple class name without package path (e.g., `UserVO`, `HashMap`, `String`)         |
-| `column_name`   | Original DB column name                                                              |
-| `java_field`    | For VO: field name, For Map: key name (alias if used in SQL, otherwise column name) |
-| `getter`        | Getter method name (**ONLY when VO file is provided in context**)                    |
-| `setter`        | Setter method name (**ONLY when VO file is provided in context**)                    |
+| Field           | Description                                                                |
+| --------------- | -------------------------------------------------------------------------- |
+| `query_id`      | Unique ID of the query                                                     |
+| `command_type`  | SQL command type: `SELECT`, `INSERT`, `UPDATE`, `DELETE`                   |
+| `sql_summary`   | Brief description of what the query does                                   |
+| `type_category` | Type of Java object: `VO`, `MAP`, `PRIMITIVE`, `NONE`                      |
+| `class_name`    | Simple class name without package (e.g., `UserVO`, `HashMap`)              |
+| `column_name`   | **Original DB column name** (the target column from table_info)            |
+| `java_field`    | Java field name from resultMap property or SQL alias (for Map types)       |
 
 ---
 
@@ -103,7 +94,7 @@ Below are the SQL queries to analyze. Each query includes **only the relevant fi
 ### 1. Identify Input/Output Types
 
 - **Look for `Parameter Type` and `Result Type`** listed under each query
-- **class_name**: Always use simple class name (e.g., `UserVO` not `com.example.UserVO`, `HashMap` not `java.util.HashMap`)
+- **class_name**: Always use simple class name (e.g., `UserVO` not `com.example.UserVO`)
 
 ### 2. Handle Map Types
 
@@ -114,72 +105,132 @@ Below are the SQL queries to analyze. Each query includes **only the relevant fi
 - With alias: `SELECT col AS alias` → `java_field` is `alias`
 - Without alias: `java_field` is `column_name`
 
-**Example:**
-```sql
-SELECT jumin_no AS ssn, emp_nm FROM TB_EMP WHERE name = #{searchName}
-```
-- Input: `java_field: "searchName"` (from `#{searchName}`)
-- Output: `jumin_no` → `java_field: "ssn"` (alias), `emp_nm` → `java_field: "emp_nm"` (no alias)
+### 3. Handle VO Types with resultMap
 
-### 3. Handle VO Types (★ Use inline field mappings ★)
+**Each query may include "Relevant Field Mappings for Target Columns" section.**
 
-**Each query includes "Relevant Field Mappings for Target Columns" section directly.**
-
-**When inline field mappings are provided:**
-- Look for the "Relevant Field Mappings for Target Columns" section under each query
+When provided:
 - Use the exact `java_field` from `Column X → Java field Y` mapping
-- **Do NOT include `getter` and `setter`** (resultMap provides the mapping directly)
+- **Do NOT include `getter` and `setter`**
 
-**Example:** If a query shows:
+When NOT provided:
+- Infer `java_field` by converting column name to camelCase
+- `UPPER_SNAKE` → `camelCase`: `EMP_NM` → `empNm`
+
+### ★★★ 4. Handle SQL Aliases (CRITICAL) ★★★
+
+**SQL aliases affect how columns map to Java fields. You MUST trace the full chain:**
+
 ```
-**Relevant Field Mappings for Target Columns (EMP_NM):**
-- Column `EMP_NM` → Java field `empNm`
+Original DB Column → SQL Alias → resultMap column → resultMap property (java_field)
 ```
 
-Then output:
+**Example Scenario:**
+```sql
+SELECT USER_NM AS TRTR_NM FROM TB_USER
+```
+```xml
+<resultMap>
+  <result property="trtrNm" column="TRTR_NM"/>
+</resultMap>
+```
+
+**Analysis:**
+1. Target column: `USER_NM` (from table_info)
+2. SQL uses alias: `USER_NM AS TRTR_NM`
+3. resultMap column: `TRTR_NM` (matches the alias, NOT the original column)
+4. resultMap property: `trtrNm` (this is the java_field)
+
+**Correct Output:**
 ```json
 {
-  "column_name": "EMP_NM",
-  "java_field": "empNm"
+  "column_name": "USER_NM",
+  "java_field": "trtrNm"
 }
 ```
 
-**When inline field mappings are NOT available (fallback):**
-- Infer `java_field` by converting column name to camelCase
-- `snake_case` → `camelCase`: `emp_nm` → `empNm`
-- `UPPER_SNAKE` → `camelCase`: `EMP_NM` → `empNm`, `BIRTH_DT` → `birthDt`
+**Common Alias Patterns:**
+- `SELECT COLUMN_A AS ALIAS_B` → Find resultMap entry where `column="ALIAS_B"` → Use its `property` as java_field
+- Multiple aliases for same column: `SELECT USER_NM AS TRTR_NM, USER_NM AS ACPNR_NM` → Creates separate entries
+- Column without alias: `SELECT USER_NM` → Find resultMap where `column="USER_NM"` directly
 
-### 4. Handle SELECT * Queries (★★★ CRITICAL ★★★)
+**IMPORTANT:**
+- `column_name` is always the **original DB column** (the target column from table_info)
+- `java_field` comes from **resultMap property** (trace through alias if used)
+- When a target column appears multiple times with different aliases, create separate crypto_field entries for each
 
-When SQL uses `SELECT *` or `SELECT t.*`:
+### 5. Handle SELECT * Queries
 
-1. **Include ALL sensitive columns** from `{{ table_info }}` in `output_mapping.crypto_fields`
-2. Do NOT leave `crypto_fields` empty just because columns aren't explicit in SQL
-3. `SELECT *` returns ALL columns - decryption is required for all sensitive columns
-
-**For java_field:**
-- Map result type: use column name as-is
-- VO result type with inline mappings: use the `java_field` from "Relevant Field Mappings" section
-- VO result type without mappings: infer using camelCase conversion
+When SQL uses `SELECT *`:
+1. **Include ALL sensitive columns** from table_info in `output_mapping.crypto_fields`
+2. For each column, find its mapping in resultMap
+3. If no specific resultMap entry, infer java_field using camelCase conversion
 
 ---
 
-## Complete Examples
+## Examples
 
-### Example 1: SELECT with VO result (inline mapping provided)
+### Example 1: SELECT with SQL Alias (★ Most Common Pattern ★)
 
-**Input (query with inline mappings):**
+**Input:**
 ```
-### Query 1: selectEmp (SELECT)
+### Query 1: selectUser (SELECT)
 **SQL:**
-SELECT jumin_no, emp_nm FROM TB_EMP WHERE emp_id = #{empId}
+SELECT USER_NM AS TRTR_NM, USER_NM AS ACPNR_NM FROM TB_USER WHERE USER_ID = #{userId}
+
+- **Parameter Type:** `String`
+- **Result Type:** `com.example.vo.UserVO`
+
+**Relevant Field Mappings for Target Columns (USER_NM):**
+- Column `TRTR_NM` → Java field `trtrNm`
+- Column `ACPNR_NM` → Java field `acpnrNm`
+```
+
+**Analysis:**
+- Target column: `USER_NM`
+- `USER_NM AS TRTR_NM` → resultMap `column="TRTR_NM"` → `property="trtrNm"`
+- `USER_NM AS ACPNR_NM` → resultMap `column="ACPNR_NM"` → `property="acpnrNm"`
+
+**Output:**
+```json
+{
+  "queries": [
+    {
+      "query_id": "selectUser",
+      "command_type": "SELECT",
+      "sql_summary": "SELECT USER_NM with aliases TRTR_NM, ACPNR_NM",
+      "input_mapping": {
+        "type_category": "PRIMITIVE",
+        "class_name": "String",
+        "crypto_fields": []
+      },
+      "output_mapping": {
+        "type_category": "VO",
+        "class_name": "UserVO",
+        "crypto_fields": [
+          { "column_name": "USER_NM", "java_field": "trtrNm" },
+          { "column_name": "USER_NM", "java_field": "acpnrNm" }
+        ]
+      }
+    }
+  ]
+}
+```
+
+### Example 2: SELECT without Alias
+
+**Input:**
+```
+### Query 2: selectEmp (SELECT)
+**SQL:**
+SELECT EMP_NM, JUMIN_NO FROM TB_EMP WHERE EMP_ID = #{empId}
 
 - **Parameter Type:** `String`
 - **Result Type:** `com.example.vo.EmpVO`
 
-**Relevant Field Mappings for Target Columns (JUMIN_NO, EMP_NM):**
-- Column `JUMIN_NO` → Java field `juminNo`
+**Relevant Field Mappings for Target Columns (EMP_NM, JUMIN_NO):**
 - Column `EMP_NM` → Java field `empNm`
+- Column `JUMIN_NO` → Java field `juminNo`
 ```
 
 **Output:**
@@ -187,9 +238,9 @@ SELECT jumin_no, emp_nm FROM TB_EMP WHERE emp_id = #{empId}
 {
   "queries": [
     {
-      "query_id": "com.example.mapper.EmpMapper.selectEmp",
+      "query_id": "selectEmp",
       "command_type": "SELECT",
-      "sql_summary": "SELECT jumin_no, emp_nm from TB_EMP",
+      "sql_summary": "SELECT EMP_NM, JUMIN_NO from TB_EMP",
       "input_mapping": {
         "type_category": "PRIMITIVE",
         "class_name": "String",
@@ -199,8 +250,8 @@ SELECT jumin_no, emp_nm FROM TB_EMP WHERE emp_id = #{empId}
         "type_category": "VO",
         "class_name": "EmpVO",
         "crypto_fields": [
-          { "column_name": "jumin_no", "java_field": "juminNo" },
-          { "column_name": "emp_nm", "java_field": "empNm" }
+          { "column_name": "EMP_NM", "java_field": "empNm" },
+          { "column_name": "JUMIN_NO", "java_field": "juminNo" }
         ]
       }
     }
@@ -208,67 +259,31 @@ SELECT jumin_no, emp_nm FROM TB_EMP WHERE emp_id = #{empId}
 }
 ```
 
-**★ Note:** No `getter`/`setter` fields - the exact `java_field` is taken from resultMap mapping.
-
----
-
-### Example 2: SELECT with Map result (aliases)
+### Example 3: UPDATE with sensitive columns
 
 **Input:**
-- Query: `SELECT jumin_no AS ssn, emp_nm AS name FROM TB_EMP WHERE emp_nm = #{searchName}`
-- Parameter Type: `java.util.HashMap`
-- Result Type: `java.util.HashMap`
+```
+### Query 3: updateUser (UPDATE)
+**SQL:**
+UPDATE TB_USER SET USER_NM = #{userNm} WHERE USER_NM = #{searchName}
 
-**Output:**
-```json
-{
-  "queries": [
-    {
-      "query_id": "com.example.mapper.EmpMapper.searchByName",
-      "command_type": "SELECT",
-      "sql_summary": "SELECT by emp_nm - emp_nm in WHERE, jumin_no/emp_nm in result",
-      "input_mapping": {
-        "type_category": "MAP",
-        "class_name": "HashMap",
-        "crypto_fields": [
-          { "column_name": "emp_nm", "java_field": "searchName" }
-        ]
-      },
-      "output_mapping": {
-        "type_category": "MAP",
-        "class_name": "HashMap",
-        "crypto_fields": [
-          { "column_name": "jumin_no", "java_field": "ssn" },
-          { "column_name": "emp_nm", "java_field": "name" }
-        ]
-      }
-    }
-  ]
-}
+- **Parameter Type:** `java.util.HashMap`
 ```
 
----
-
-### Example 3: UPDATE with sensitive columns in SET and WHERE
-
-**Input:**
-- Query: `UPDATE TB_EMP SET birth_dt = #{newBirthDt} WHERE emp_nm = #{searchName}`
-- Parameter Type: `java.util.HashMap`
-
 **Output:**
 ```json
 {
   "queries": [
     {
-      "query_id": "com.example.mapper.EmpMapper.updateBirthDt",
+      "query_id": "updateUser",
       "command_type": "UPDATE",
-      "sql_summary": "UPDATE birth_dt WHERE emp_nm - both are sensitive",
+      "sql_summary": "UPDATE USER_NM WHERE USER_NM",
       "input_mapping": {
         "type_category": "MAP",
         "class_name": "HashMap",
         "crypto_fields": [
-          { "column_name": "emp_nm", "java_field": "searchName" },
-          { "column_name": "birth_dt", "java_field": "newBirthDt" }
+          { "column_name": "USER_NM", "java_field": "userNm" },
+          { "column_name": "USER_NM", "java_field": "searchName" }
         ]
       },
       "output_mapping": {
@@ -281,69 +296,25 @@ SELECT jumin_no, emp_nm FROM TB_EMP WHERE emp_id = #{empId}
 }
 ```
 
----
-
-### Example 4: SELECT * with Map result
+### Example 4: SELECT * with VO result
 
 **Input:**
-- Query: `SELECT * FROM TB_EMP WHERE emp_id = #{empId}`
-- Result Type: `java.util.HashMap`
-- Target table has sensitive columns: `jumin_no`, `emp_nm`, `birth_dt`
+- Query: `SELECT * FROM TB_USER WHERE USER_ID = #{userId}`
+- Result Type: `com.example.vo.UserVO`
+- Target columns: `USER_NM`, `JUMIN_NO`
 
 **Analysis:**
-- `SELECT *` returns ALL columns including sensitive ones
-- Must include ALL sensitive columns in crypto_fields
-- No alias used → java_field = column_name
+- `SELECT *` returns ALL columns including target columns
+- Must include all sensitive columns in crypto_fields
 
 **Output:**
 ```json
 {
   "queries": [
     {
-      "query_id": "com.example.mapper.EmpMapper.selectAll",
+      "query_id": "selectAll",
       "command_type": "SELECT",
-      "sql_summary": "SELECT * - returns ALL columns including jumin_no, emp_nm, birth_dt",
-      "input_mapping": {
-        "type_category": "PRIMITIVE",
-        "class_name": "String",
-        "crypto_fields": []
-      },
-      "output_mapping": {
-        "type_category": "MAP",
-        "class_name": "HashMap",
-        "crypto_fields": [
-          { "column_name": "jumin_no", "java_field": "jumin_no" },
-          { "column_name": "emp_nm", "java_field": "emp_nm" },
-          { "column_name": "birth_dt", "java_field": "birth_dt" }
-        ]
-      }
-    }
-  ]
-}
-```
-
----
-
-### Example 5: SELECT * with VO result (★ VO file NOT provided ★)
-
-**Input:**
-- Query: `SELECT * FROM TARGET_TABLE WHERE USER_UUID = #{userUuid}`
-- Result Type: `com.example.vo.UserInfoVO` (★ VO file NOT in context ★)
-- Target table has sensitive columns: `USER_NM`, `JUMIN_NO`, `BIRTH_DT`
-
-**Analysis:**
-- `SELECT *` returns ALL columns
-- VO file is NOT provided → infer java_field using camelCase
-- **No getter/setter** because VO structure is unknown
-
-**Output:**
-```json
-{
-  "queries": [
-    {
-      "query_id": "com.example.mapper.UserMapper.selectByUuid",
-      "command_type": "SELECT",
-      "sql_summary": "SELECT * - returns ALL columns including USER_NM, JUMIN_NO, BIRTH_DT",
+      "sql_summary": "SELECT * - returns ALL columns including USER_NM, JUMIN_NO",
       "input_mapping": {
         "type_category": "PRIMITIVE",
         "class_name": "String",
@@ -351,11 +322,10 @@ SELECT jumin_no, emp_nm FROM TB_EMP WHERE emp_id = #{empId}
       },
       "output_mapping": {
         "type_category": "VO",
-        "class_name": "UserInfoVO",
+        "class_name": "UserVO",
         "crypto_fields": [
           { "column_name": "USER_NM", "java_field": "userNm" },
-          { "column_name": "JUMIN_NO", "java_field": "juminNo" },
-          { "column_name": "BIRTH_DT", "java_field": "birthDt" }
+          { "column_name": "JUMIN_NO", "java_field": "juminNo" }
         ]
       }
     }
@@ -363,18 +333,63 @@ SELECT jumin_no, emp_nm FROM TB_EMP WHERE emp_id = #{empId}
 }
 ```
 
-**★ Key Point:** No `getter`/`setter` fields because VO file was not provided. Only `column_name` and inferred `java_field` are included.
+### Example 5: MERGE/INSERT with data from target table (DB → DB transfer)
+
+**Input:**
+```
+### Query 5: mergeToOtherTable (MERGE)
+**SQL:**
+MERGE INTO non_target_table tgt
+USING (SELECT user_id, user_nm, jumin_no FROM target_table WHERE status = 'A') src
+ON (tgt.user_id = src.user_id)
+WHEN MATCHED THEN UPDATE SET tgt.user_nm = src.user_nm
+WHEN NOT MATCHED THEN INSERT (user_id, user_nm, jumin_no) VALUES (src.user_id, src.user_nm, src.jumin_no)
+
+- **Parameter Type:** `None`
+- **Result Type:** `int`
+```
+
+**Analysis:**
+- This query moves data **from target_table to non_target_table** within SQL
+- The sensitive columns (`USER_NM`, `JUMIN_NO`) are **already encrypted in target_table**
+- Data flows directly DB → DB without passing through Java layer
+- **No encryption/decryption needed** - encrypted values are transferred as-is
+
+**Output:**
+```json
+{
+  "queries": [
+    {
+      "query_id": "mergeToOtherTable",
+      "command_type": "MERGE",
+      "sql_summary": "MERGE data from target_table to non_target_table - DB to DB transfer, already encrypted",
+      "input_mapping": {
+        "type_category": "NONE",
+        "class_name": null,
+        "crypto_fields": []
+      },
+      "output_mapping": {
+        "type_category": "NONE",
+        "class_name": null,
+        "crypto_fields": []
+      }
+    }
+  ]
+}
+```
+
+**★ Key Point:** When sensitive data moves **directly between tables in SQL** (MERGE INTO, INSERT INTO ... SELECT), the data is already encrypted in the source table. No Java-layer encryption/decryption is required - `crypto_fields` should be empty.
 
 ---
 
 ## Start Extraction Now
 
-Analyze the provided SQL queries using the inline field mappings shown with each query.
+Analyze the provided SQL queries and extract field mappings.
 
 **Key Points:**
-- Each query has a "Relevant Field Mappings for Target Columns" section - use it directly
-- For SELECT queries: mappings show `Column X → Java field Y` format
-- For INSERT/UPDATE queries: use `#{fieldName}` patterns from SQL
-- Do NOT include getter/setter - resultMap provides the mapping directly
+1. `column_name` = **Original DB column** from table_info
+2. `java_field` = **resultMap property** (trace through SQL alias if present)
+3. When target column uses alias, find resultMap entry matching the **alias**, not the original column
+4. Do NOT include getter/setter
 
 **REMINDER: Output ONLY the JSON object. Start directly with `{` and end with `}`.**

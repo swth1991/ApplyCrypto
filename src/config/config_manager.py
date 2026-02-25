@@ -125,10 +125,14 @@ class Configuration(BaseModel):
         "AnyframeBatSarangOn",
         "AnyframeBatEtc",
         "anyframe_ccs_batch",
+        "BatBanka",
+        "anyframe_banka",
     ] = Field(
         "SpringMVC", description="프레임워크 타입"
     )
-    sql_wrapping_type: Literal["mybatis", "mybatis_ccs", "mybatis_ccs_batch", "jdbc", "jpa"] = Field(
+    sql_wrapping_type: Literal[
+        "mybatis", "mybatis_ccs", "ccs_batch", "bnk_batch", "jdbc", "jpa", "jdbc_banka"
+    ] = Field(
         ..., description="SQL Wrapping 타입"
     )
     access_tables: List[AccessTable] = Field(
@@ -157,9 +161,14 @@ class Configuration(BaseModel):
     max_tokens_per_batch: int = Field(8000, description="한번에 처리할 최대 토큰 수")
     max_workers: int = Field(4, description="병렬 처리 워커 수")
     max_retries: int = Field(3, description="최대 재시도 횟수")
-    generate_type: Literal["full_source", "diff", "part"] = Field(
+    generate_type: Literal["full_source", "diff", "part", "method"] = Field(
         "diff",
-        description="코드 생성 방식 (full_source: 전체 코드, diff: 변경분, part: 부분 코드)",
+        description="코드 생성 방식 (full_source: 전체 코드, diff: 변경분, part: 부분 코드, method: 메서드 단위)",
+    )
+    ccs_prefix: Optional[Literal["BC", "CP", "CR"]] = Field(
+        None,
+        description="CCS 프로젝트 prefix. 유틸리티 클래스 결정에 사용 "
+        "(BC→BCCommUtil, CP→CPCmpgnUtil, CR→CRCommonUtil)",
     )
 
     def get_table_names(self) -> List[str]:

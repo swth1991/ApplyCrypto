@@ -47,18 +47,18 @@ class BaseCodeGenerator(ABC):
     def __init__(
         self,
         llm_provider: LLMProvider,
+        config: Configuration,
         prompt_cache: Dict[str, Dict[str, Any]] = None,
         template_path: Optional[Path] = None,
-        config: Optional[Configuration] = None,
     ):
         """
         BaseCodeGenerator 초기화
 
         Args:
             llm_provider: LLM 프로바이더
+            config: 설정 객체
             prompt_cache: 프롬프트 캐시 저장소 (선택적)
             template_path: 템플릿 파일 경로
-            config: 설정 객체 (선택적)
         """
         self.llm_provider = llm_provider
         self._prompt_cache = prompt_cache if prompt_cache is not None else {}
@@ -104,11 +104,14 @@ class BaseCodeGenerator(ABC):
                 f"{'='*60}"
             )
 
-        # 토큰 인코더 초기화 (GPT-4용)
+        # 토큰 인코더 초기화
+        self._init_token_encoder()
+
+    def _init_token_encoder(self) -> None:
+        """토큰 인코더를 초기화합니다."""
         try:
             self.token_encoder = tiktoken.encoding_for_model("gpt-4")
         except Exception:
-            # tiktoken이 없거나 모델을 찾을 수 없는 경우 간단한 추정 사용
             logger.warning(
                 "tiktoken을 사용할 수 없습니다. 간단한 토큰 추정을 사용합니다."
             )
@@ -155,7 +158,7 @@ class BaseCodeGenerator(ABC):
             with open(path_obj, "r", encoding="utf-8") as f:
                 lines = f.readlines()
 
-            if self.config and self.config.generate_type == 'full_source':
+            if self.config.generate_type == 'full_source':
                 file_block = (
                     f"=== File: {path_obj.name} ===\n"
                     + "".join(lines)
@@ -175,6 +178,14 @@ class BaseCodeGenerator(ABC):
 
         source_files_str = "\n\n".join(snippets)
 
+        # context files (VO 등 참조 파일) 읽기
+        context_snippets = []
+        for ctx_path in (input_data.context_files or []):
+            ctx_obj = Path(ctx_path)
+            if ctx_obj.exists():
+                with open(ctx_obj, "r", encoding="utf-8") as f:
+                    context_snippets.append(f"=== File: {ctx_obj.name} ===\n{f.read()}")
+        context_files_str = "\n\n".join(context_snippets)
 
         # 배치 프롬프트 생성
         batch_variables = {
@@ -183,7 +194,7 @@ class BaseCodeGenerator(ABC):
             "source_files": source_files_str,
             "file_count": len(input_data.file_paths),
             "context_files": context_files_str,
-            "context_file_count": len(input_data.context_files),
+            "context_file_count": len(input_data.context_files or []),
             **(input_data.extra_variables or {}),
         }
 
@@ -226,7 +237,7 @@ class BaseCodeGenerator(ABC):
                 file_mapping = response.get("file_mapping", {})
 
             if not content:
-                raise Exception("LLM응답에 content가 없습니다.")
+                raise CodeGeneratorError("LLM 응답에 content가 없습니다.")
 
             content = content.strip()
 
@@ -234,7 +245,7 @@ class BaseCodeGenerator(ABC):
 
         except Exception as e:
             logger.error(f"LLM 응답 파싱 실패: {e}")
-            raise Exception(f"LLM 응답 파싱 실패: {e}")
+            raise CodeGeneratorError(f"LLM 응답 파싱 실패: {e}") from e
 
     def _parse_delimited_format(
         self, content: str, file_mapping: Dict[str, str]
@@ -307,7 +318,7 @@ class BaseCodeGenerator(ABC):
                 continue
 
         if not modifications:
-            raise Exception(
+            raise CodeGeneratorError(
                 "구분자 형식 파싱 실패: 유효한 수정 블록을 찾을 수 없습니다."
             )
 
@@ -403,26 +414,25 @@ class BaseCodeGenerator(ABC):
 
             # 각 call_stack 확인
             for call_stack in call_stacks:
-                if not isinstance(call_stack, list):
+                if not isinstance(call_stack, list) or not call_stack:
                     continue
 
-                # call_stack 내 method_signature 중 하나라도 file_class_names와 매칭되는지 확인
-                for method_sig in call_stack:
-                    if not isinstance(method_sig, str):
-                        continue
+                # call_stack의 시작점(첫 번째 메서드)만 검사
+                first_method = call_stack[0]
+                if not isinstance(first_method, str):
+                    continue
 
-                    # method_signature에서 클래스명 추출 (예: "ClassName.methodName" -> "ClassName")
-                    if "." in method_sig:
-                        method_class_name = method_sig.split(".")[0]
-                    else:
-                        method_class_name = method_sig
+                # method_signature에서 클래스명 추출 (예: "ClassName.methodName" -> "ClassName")
+                if "." in first_method:
+                    method_class_name = first_method.split(".")[0]
+                else:
+                    method_class_name = first_method
 
-                    # file_class_names와 비교 (정확히 일치하는 경우만)
-                    if method_class_name in file_class_names:
-                        # 중복 방지
-                        if call_stack not in call_stacks_list:
-                            call_stacks_list.append(call_stack)
-                        break
+                # file_class_names와 비교 (정확히 일치하는 경우만)
+                if method_class_name in file_class_names:
+                    # 중복 방지
+                    if call_stack not in call_stacks_list:
+                        call_stacks_list.append(call_stack)
 
         # JSON 문자열로 변환
         return json.dumps(call_stacks_list, indent=2, ensure_ascii=False)
@@ -456,20 +466,18 @@ class BaseCodeGenerator(ABC):
                 is_relevant = False
 
                 for call_stack in call_stacks:
-                    if not isinstance(call_stack, list):
+                    if not isinstance(call_stack, list) or not call_stack:
                         continue
-                    for method_sig in call_stack:
-                        if not isinstance(method_sig, str):
-                            continue
-                        # method_signature에서 클래스명 추출
-                        if "." in method_sig:
-                            method_class_name = method_sig.split(".")[0]
-                        else:
-                            method_class_name = method_sig
-                        if method_class_name in file_class_names:
-                            is_relevant = True
-                            break
-                    if is_relevant:
+                    # call_stack의 시작점(첫 번째 메서드)만 검사
+                    first_method = call_stack[0]
+                    if not isinstance(first_method, str):
+                        continue
+                    if "." in first_method:
+                        method_class_name = first_method.split(".")[0]
+                    else:
+                        method_class_name = first_method
+                    if method_class_name in file_class_names:
+                        is_relevant = True
                         break
 
                 if not is_relevant:

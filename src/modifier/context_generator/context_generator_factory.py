@@ -3,7 +3,6 @@ from modifier.code_generator.base_code_generator import BaseCodeGenerator
 from modifier.context_generator.base_context_generator import BaseContextGenerator
 
 
-
 class ContextGeneratorFactory:
     """
     Factory for creating ContextGenerator instances.
@@ -23,7 +22,13 @@ class ContextGeneratorFactory:
         Returns:
             BaseContextGenerator: An instance of ContextGenerator.
         """
-        if config.sql_wrapping_type == "jdbc":
+        if config.sql_wrapping_type == "jdbc_banka":
+            from modifier.context_generator.anyframe_banka_context_generator import (
+                AnyframeBankaContextGenerator,
+            )
+
+            return AnyframeBankaContextGenerator(config, code_generator)
+        elif config.sql_wrapping_type == "jdbc":
             from modifier.context_generator.jdbc_context_generator import JdbcContextGenerator
 
             return JdbcContextGenerator(config, code_generator)
@@ -46,6 +51,16 @@ class ContextGeneratorFactory:
 
             # mybatis_ccs_batch는 CCS 배치 레이어명(bat, batvo)을 사용
             return MybatisCCSBatchContextGenerator(config, code_generator)
+        elif config.sql_wrapping_type == "ccs_batch":
+            from modifier.context_generator.ccs_batch_context_generator import CCSBatchContextGenerator
+
+            # ccs_batch는 CCS 배치 레이어명(bat, batvo)을 사용
+            return CCSBatchContextGenerator(config, code_generator)
+        elif config.sql_wrapping_type == "bnk_batch":
+            from modifier.context_generator.bnk_batch_context_generator import BNKBatchContextGenerator
+
+            # bnk_batch는 BNK 배치 레이어명(bat, batvo)을 사용, 같은 디렉토리 BATVO 지원
+            return BNKBatchContextGenerator(config, code_generator)
 
         from modifier.context_generator.per_layer_context_generator import PerLayerContextGenerator
 

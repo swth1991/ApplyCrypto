@@ -27,10 +27,12 @@ def temp_dir():
 def sample_config_file(temp_dir):
     """샘플 설정 파일 생성"""
     config_data = {
-        "project_path": str(temp_dir),
+        "target_project": str(temp_dir),
         "source_file_types": [".java", ".xml"],
+        "framework_type": "SpringMVC",
         "sql_wrapping_type": "mybatis",
-        "access_tables": [{"table_name": "USERS", "columns": ["ID", "NAME", "EMAIL"]}],
+        "modification_type": "ControllerOrService",
+        "access_tables": [{"table_name": "USERS", "columns": [{"name": "ID", "new_column": False}, {"name": "NAME", "new_column": False}, {"name": "EMAIL", "new_column": False}]}],
     }
 
     config_file = temp_dir / "config.json"
@@ -96,9 +98,9 @@ def test_parse_args_modify(cli_controller):
 
 def test_load_config(cli_controller, sample_config_file):
     """설정 파일 로드 테스트"""
-    config_manager = cli_controller.load_config(str(sample_config_file))
-    assert config_manager is not None
-    assert config_manager.project_path == Path(sample_config_file.parent)
+    config = cli_controller.load_config(str(sample_config_file))
+    assert config is not None
+    assert config.target_project == str(sample_config_file.parent)
 
 
 def test_list_all_files(cli_controller, temp_dir):

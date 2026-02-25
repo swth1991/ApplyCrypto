@@ -1,5 +1,4 @@
 import logging
-import os
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -8,7 +7,7 @@ from persistence.debug_manager import DebugManager
 from .base_code_patcher import BaseCodePatcher
 from .diff_utils import FileDiff, LineType, UnifiedDiffHunk, parse_diff
 
-logger = logging.getLogger("applycrypto.code_patcher")
+logger = logging.getLogger(__name__)
 
 
 class DiffCodePatcher(BaseCodePatcher):
@@ -32,17 +31,8 @@ class DiffCodePatcher(BaseCodePatcher):
         Apply a Unified Diff to a file.
         """
         try:
-            if not file_path.is_absolute():
-                logger.warning(
-                    f"Relative path passed: {file_path}. Converting to absolute."
-                )
-                file_path = self.project_root / file_path
-
-            file_path = file_path.resolve()
-
-            if not file_path.exists():
-                error_msg = f"File does not exist: {file_path}"
-                logger.error(error_msg)
+            file_path, error_msg = self._normalize_file_path(file_path)
+            if error_msg:
                 return False, error_msg
 
             if dry_run:
