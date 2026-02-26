@@ -117,14 +117,14 @@ class AnyframeRps2ContextGenerator(BaseContextGenerator):
             if x.endswith("VO.java") or x.endswith("SVO.java") or x.endswith("DVO.java")
         ]
 
-        # DQM (VO import 수집용)
-        dqm_files = [x for x in dem_daq_files if "/dqm/" in x or x.endswith("DQM.java")]
+        # DXM (DQM/DEM, VO import 수집용)
+        dxm_files = [x for x in dem_daq_files if "/dqm/" in x or "/dem/" in x or x.endswith("DQM.java") or x.endswith("DEM.java")]
 
         # ═══ STEP 2: class_name → file_path 매핑 ═══
         impl_name_to_path = {Path(f).stem: f for f in svc_impl_files}
         interface_name_to_path = {Path(f).stem: f for f in svc_interface_files}
         biz_name_to_path = {Path(f).stem: f for f in biz_files}
-        dqm_name_to_path = {Path(f).stem: f for f in dqm_files}
+        dxm_name_to_path = {Path(f).stem: f for f in dxm_files}
 
         # SVC 전체 (interface + impl) 매핑
         svc_name_to_path: Dict[str, str] = {}
@@ -155,7 +155,7 @@ class AnyframeRps2ContextGenerator(BaseContextGenerator):
 
         logger.info(f"call_stack 기반 그룹핑 시작: anchor SVC {len(anchor_names)}개")
 
-        # ═══ STEP 4: 각 [SVC, DQM] 기준으로 call_stack 순회 → BIZ 수집 ═══
+        # ═══ STEP 4: 각 [SVC, DXM] 기준으로 call_stack 순회 → BIZ 수집 ═══
         anchor_pairs_to_biz_names: Dict[tuple, Set[str]] = {}
         anchor_pairs_to_svc_names: Dict[tuple, Set[str]] = {}
 
@@ -187,20 +187,20 @@ class AnyframeRps2ContextGenerator(BaseContextGenerator):
                     if not cs_starts_with_this_svc:
                         continue
 
-                    # 현재 call_stack 내의 DQM 식별
-                    dqm_name = None
+                    # 현재 call_stack 내의 DXM(DQM/DEM) 식별
+                    dxm_name = None
                     for entry in cs:
                         if not isinstance(entry, str) or "." not in entry:
                             continue
                         class_name = entry.split(".")[0]
-                        if class_name in dqm_name_to_path or class_name.endswith("DQM"):
-                            dqm_name = class_name
+                        if class_name in dxm_name_to_path or class_name.endswith(("DQM", "DEM")):
+                            dxm_name = class_name
                             break
                     
-                    if not dqm_name:
-                        dqm_name = "UNKNOWN_DQM"
+                    if not dxm_name:
+                        dxm_name = "UNKNOWN_DXM"
 
-                    anchor_pair = (svc_name, dqm_name)
+                    anchor_pair = (svc_name, dxm_name)
                     if anchor_pair not in anchor_pairs_to_biz_names:
                         anchor_pairs_to_biz_names[anchor_pair] = set()
                         anchor_pairs_to_svc_names[anchor_pair] = set()
@@ -230,7 +230,7 @@ class AnyframeRps2ContextGenerator(BaseContextGenerator):
         context_file_groups: Dict[tuple, List[str]] = {}
 
         for anchor_pair, biz_names in anchor_pairs_to_biz_names.items():
-            svc_name, dqm_name = anchor_pair
+            svc_name, dxm_name = anchor_pair
             svc_path = svc_name_to_path.get(svc_name)
             if not svc_path:
                 continue
@@ -256,16 +256,18 @@ class AnyframeRps2ContextGenerator(BaseContextGenerator):
                     )
             file_group_paths.extend(matched_biz_files)
 
-            # DQM 파일 추가 (DQM도 포함)
-            dqm_path = None
-            if dqm_name and dqm_name != "UNKNOWN_DQM":
-                dqm_path = dqm_name_to_path.get(dqm_name)
-                if dqm_path and dqm_path not in file_group_paths:
-                    file_group_paths.append(dqm_path)
+            # DXM 파일 확인 (DXM은 대상 파일이 아닌 컨텍스트 파일로 추가)
+            dxm_path = None
+            if dxm_name and dxm_name != "UNKNOWN_DXM":
+                dxm_path = dxm_name_to_path.get(dxm_name)
 
-            # VO 선택: 그룹 내 파일 (DQM이 포함되어 있으므로 DQM의 import도 수집됨)
+            # VO 선택: 그룹 내 파일 및 DXM 파일에서 import 수집
             all_imports_for_vo: set = set()
-            for fp in file_group_paths:
+            paths_for_imports = list(file_group_paths)
+            if dxm_path:
+                paths_for_imports.append(dxm_path)
+
+            for fp in paths_for_imports:
                 try:
                     tree, error = java_parser.parse_file(Path(fp))
                     if not error:
@@ -285,11 +287,14 @@ class AnyframeRps2ContextGenerator(BaseContextGenerator):
                 max_tokens=self.MAX_VO_TOKENS,
             )
 
+            if dxm_path and dxm_path not in vo_group_paths:
+                vo_group_paths.insert(0, dxm_path)
+
             logger.info(
-                f"✓ {svc_name} - {dqm_name}: SVC={len([p for p in file_group_paths if p not in matched_biz_files and p != dqm_path])}, "
+                f"✓ {svc_name} - {dxm_name}: SVC={len([p for p in file_group_paths if p not in matched_biz_files])}, "
                 f"BIZ={len(matched_biz_files)} ({', '.join(sorted(biz_names))}), "
-                f"DQM={'1' if dqm_path else '0'}, "
-                f"VO={len(vo_group_paths)}"
+                f"DXM={'1' if dxm_path else '0'}, "
+                f"VO={len(vo_group_paths) - (1 if dxm_path else 0)}"
             )
 
             file_groups[anchor_pair] = file_group_paths

@@ -17,7 +17,7 @@ import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from config.config_manager import Configuration
 from models.modification_context import ModificationContext
@@ -45,8 +45,8 @@ class MethodIndexEntry:
     end_line: int  # 원본 파일에서의 끝 라인 (1-based, AST 기준)
 
 
-class ThreeStepBankaCodeGenerator(ThreeStepCodeGenerator):
-    """BNK 온라인 전용 ThreeStep 코드 생성기
+class ThreeStepRps2CodeGenerator(ThreeStepCodeGenerator):
+    """Rps2 온라인 전용 ThreeStep 코드 생성기
 
     SVC가 여러 BIZ를 호출하고 각 BIZ 파일이 수천 줄 이상일 수 있어
     Phase 2 프롬프트가 LLM max token을 초과하는 문제를 해결합니다.
@@ -89,9 +89,9 @@ class ThreeStepBankaCodeGenerator(ThreeStepCodeGenerator):
     ) -> Path:
         """세션 디렉토리를 생성합니다. (RPS 전용 오버라이드)
 
-        디렉토리 구조: {output_dir}/{timestamp}/{table_name}/{first_file}__{last_file}/
+        디렉토리 구조: {output_dir}/{timestamp}/{table_name}/{first_file}__{dxm_file}/
 
-        부모 클래스와 달리, 마지막 디렉토리명을 {first_file}__{last_file} 형태로
+        부모 클래스와 달리, 마지막 디렉토리명을 {first_file}__{dxm_file} 형태로
         구성하여 배치에 포함된 파일 범위를 명확히 식별할 수 있도록 합니다.
         """
         if self._session_timestamp is None:
@@ -100,17 +100,20 @@ class ThreeStepBankaCodeGenerator(ThreeStepCodeGenerator):
         table_name = modification_context.table_name
         safe_table_name = re.sub(r"[^\w\-]", "_", table_name)
 
-        # 첫 번째/마지막 파일 이름 추출 (확장자 제외)
+        # 첫 번째/DXM 파일 이름 추출 (확장자 제외)
         first_file_name = "unknown"
-        last_file_name = "unknown"
+        dxm_file_name = "unknown"
         if modification_context.file_paths:
             first_file_name = Path(modification_context.file_paths[0]).stem
             first_file_name = re.sub(r"[^\w\-]", "_", first_file_name)
-            last_file_name = Path(modification_context.file_paths[-1]).stem
-            last_file_name = re.sub(r"[^\w\-]", "_", last_file_name)
+            
+        if modification_context.context_files:
+            possible_dxm = Path(modification_context.context_files[0]).stem
+            if "DQM" in possible_dxm.upper() or "DEM" in possible_dxm.upper() or "DXM" in possible_dxm.upper():
+                dxm_file_name = re.sub(r"[^\w\-]", "_", possible_dxm)
 
-        # anchor name: {first_file}__{last_file}
-        anchor_name = f"{first_file_name}__{last_file_name}"
+        # anchor name: {first_file}__{dxm_file}
+        anchor_name = f"{first_file_name}__{dxm_file_name}"
 
         session_dir = (
             self.output_dir / self._session_timestamp / safe_table_name / anchor_name
@@ -119,6 +122,46 @@ class ThreeStepBankaCodeGenerator(ThreeStepCodeGenerator):
 
         logger.info(f"세션 디렉토리 생성됨: {session_dir}")
         return session_dir
+
+    def _get_plan_session_dir(
+        self, modification_context: ModificationContext
+    ) -> Optional[Path]:
+        """execution_only 모드에서 현재 컨텍스트에 맞는 plan 세션 디렉토리를 찾습니다.
+
+        _create_session_dir와 동일한 {first_file}__{dxm_file} 패턴으로 디렉토리를 탐색합니다.
+        """
+        plan_timestamp = self._get_plan_timestamp()
+        if not plan_timestamp:
+            return None
+
+        table_name = modification_context.table_name
+        safe_table_name = re.sub(r"[^\w\-]", "_", table_name)
+
+        # 첫 번째/DXM 파일 이름 추출 (확장자 제외)
+        first_file_name = "unknown"
+        dxm_file_name = "unknown"
+        if modification_context.file_paths:
+            first_file_name = Path(modification_context.file_paths[0]).stem
+            first_file_name = re.sub(r"[^\w\-]", "_", first_file_name)
+
+        if modification_context.context_files:
+            possible_dxm = Path(modification_context.context_files[0]).stem
+            if "DQM" in possible_dxm.upper() or "DEM" in possible_dxm.upper() or "DXM" in possible_dxm.upper():
+                dxm_file_name = re.sub(r"[^\w\-]", "_", possible_dxm)
+
+        anchor_name = f"{first_file_name}__{dxm_file_name}"
+        session_dir = self.output_dir / plan_timestamp / safe_table_name / anchor_name
+
+        if session_dir.exists():
+            return session_dir
+
+        logger.warning(
+            f"Plan 세션 디렉토리를 찾을 수 없습니다: {session_dir}\n"
+            f"  - timestamp: {plan_timestamp}\n"
+            f"  - table_name: {table_name}\n"
+            f"  - anchor: {anchor_name}"
+        )
+        return None
 
     # ========== Phase 1 오버라이드 (VO 제외) ==========
 
