@@ -179,6 +179,48 @@ def test_extract_method_calls(java_parser, sample_java_file):
     assert any("findById" in call for call in getUser_method.method_calls)
 
 
+def test_extract_method_calls_with_object_creation(java_parser, temp_dir):
+    """객체 생성 표현식 다음의 메서드 호출 추출 테스트 (new ClassB().getObjectForA())"""
+    java_code = """
+package com.example;
+
+public class TestClass {
+    
+    public void testMethod() {
+        ClassA variable_a = new ClassB().getObjectForA();
+        ClassC variable_c = new ClassD().getObjectForC().process();
+    }
+}
+"""
+    file_path = temp_dir / "TestObjectCreation.java"
+    file_path.write_text(java_code, encoding="utf-8")
+
+    tree, error = java_parser.parse_file(file_path)
+    assert tree is not None
+    assert error is None
+
+    classes = java_parser.extract_class_info(tree, file_path)
+    assert len(classes) == 1
+    assert classes[0].name == "TestClass"
+
+    # testMethod 메서드 찾기
+    test_method = next((m for m in classes[0].methods if m.name == "testMethod"), None)
+    assert test_method is not None
+    assert len(test_method.method_calls) > 0
+
+    # new ClassB().getObjectForA() 패턴 확인
+    # "ClassB.getObjectForA" 형식으로 추출되어야 함
+    method_calls_str = " ".join(test_method.method_calls)
+    assert "ClassB.getObjectForA" in method_calls_str or any(
+        "ClassB" in call and "getObjectForA" in call for call in test_method.method_calls
+    )
+
+    # new ClassD().getObjectForC().process() 패턴도 확인
+    assert any("ClassD" in call and "getObjectForC" in call for call in test_method.method_calls) or any(
+        "process" in call for call in test_method.method_calls
+    )
+
+
 def test_build_call_graph(java_parser, sample_java_file):
     """Call Graph 생성 테스트"""
     tree, _ = java_parser.parse_file(sample_java_file)

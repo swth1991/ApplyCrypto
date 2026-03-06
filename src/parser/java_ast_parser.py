@@ -694,6 +694,17 @@ class JavaASTParser:
             # 여러 개의 '.'이나 '::'로 연결된 경우를 처리
             # 마지막 '.'이나 '::'를 기준으로 method 호출 추출
             # 예: this.vets.findAll() -> vets.findAll()
+            # 예: new ClassB().getObjectForA() -> ClassB.getObjectForA
+
+            def extract_class_name_from_object_creation(obj_creation_node: Node) -> Optional[str]:
+                """object_creation_expression 노드에서 클래스명 추출"""
+                for child in obj_creation_node.children:
+                    if child.type in ["type_identifier", "scoped_identifier", "generic_type"]:
+                        return child.text.decode("utf8")
+                    elif child.type == "object_creation_expression":
+                        # 중첩된 경우 재귀적으로 처리
+                        return extract_class_name_from_object_creation(child)
+                return None
 
             def extract_method_call_from_node(method_node: Node) -> Optional[str]:
                 """method_invocation 노드에서 메서드 호출 문자열 추출 (재귀적)"""
@@ -744,6 +755,11 @@ class JavaASTParser:
                         field_result = extract_from_field_access(child)
                         if field_result:
                             parts.append(field_result)
+                    elif child.type == "object_creation_expression":
+                        # new ClassB() 같은 객체 생성 표현식 처리
+                        class_name = extract_class_name_from_object_creation(child)
+                        if class_name:
+                            parts.append(class_name)
                     elif child.type == "method_invocation":
                         # 중첩된 method_invocation (예: this.vets.findAll())
                         # 재귀적으로 처리하되, 전체 체인을 parts에 추가
