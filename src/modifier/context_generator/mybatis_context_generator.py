@@ -101,6 +101,7 @@ class MybatisContextGenerator(BaseContextGenerator):
         layer_files: Dict[str, List[str]],
         table_name: str,
         columns: List[Dict],
+        table_access_info: Optional["TableAccessInfo"] = None,
     ) -> List[ModificationContext]:
         """
         Generates modification contexts based on import relationships between Controller, Service, and Repository layers.

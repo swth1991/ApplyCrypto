@@ -82,7 +82,8 @@ class TestWatsonXAIProvider:
 
     @pytest.fixture(scope="class", autouse=True)
     def setup_env(self):
-        pass
+        """테스트 클래스 시작 시 환경변수 로딩"""
+        load_env()
         # 테스트 후 정리 작업이 필요한 경우 여기에 추가
 
     @pytest.fixture
@@ -98,10 +99,6 @@ class TestWatsonXAIProvider:
 
     @pytest.mark.skipif(
         not WATSONX_AVAILABLE, reason="ibm-watsonx-ai 라이브러리가 설치되지 않았습니다"
-    )
-    @pytest.mark.skipif(
-        not has_watsonx_credentials(),
-        reason="WatsonX.AI credential이 환경변수에 설정되지 않았습니다",
     )
     def test_provider_initialization_success(self, provider_config):
         """프로바이더 초기화 성공 테스트 (실제 API 연결)"""
@@ -126,10 +123,6 @@ class TestWatsonXAIProvider:
 
     @pytest.mark.skipif(
         not WATSONX_AVAILABLE, reason="ibm-watsonx-ai 라이브러리가 설치되지 않았습니다"
-    )
-    @pytest.mark.skipif(
-        not has_watsonx_credentials(),
-        reason="WatsonX.AI credential이 환경변수에 설정되지 않았습니다",
     )
     def test_call_success(self, provider_config):
         """실제 API 호출 성공 테스트"""
@@ -161,10 +154,6 @@ class TestWatsonXAIProvider:
     @pytest.mark.skipif(
         not WATSONX_AVAILABLE, reason="ibm-watsonx-ai 라이브러리가 설치되지 않았습니다"
     )
-    @pytest.mark.skipif(
-        not has_watsonx_credentials(),
-        reason="WatsonX.AI credential이 환경변수에 설정되지 않았습니다",
-    )
     def test_call_with_parameters(self, provider_config):
         """파라미터를 포함한 실제 API 호출 테스트"""
         provider = WatsonXAIProvider(
@@ -190,10 +179,6 @@ class TestWatsonXAIProvider:
     @pytest.mark.skipif(
         not WATSONX_AVAILABLE, reason="ibm-watsonx-ai 라이브러리가 설치되지 않았습니다"
     )
-    @pytest.mark.skipif(
-        not has_watsonx_credentials(),
-        reason="WatsonX.AI credential이 환경변수에 설정되지 않았습니다",
-    )
     def test_call_multiple_requests(self, provider_config):
         """여러 번의 API 호출 테스트"""
         provider = WatsonXAIProvider(
@@ -218,10 +203,6 @@ class TestWatsonXAIProvider:
 
     @pytest.mark.skipif(
         not WATSONX_AVAILABLE, reason="ibm-watsonx-ai 라이브러리가 설치되지 않았습니다"
-    )
-    @pytest.mark.skipif(
-        not has_watsonx_credentials(),
-        reason="WatsonX.AI credential이 환경변수에 설정되지 않았습니다",
     )
     def test_validate_response_valid(self, provider_config):
         """실제 응답 검증 테스트"""
@@ -250,10 +231,6 @@ class TestWatsonXAIProvider:
     @pytest.mark.skipif(
         not WATSONX_AVAILABLE, reason="ibm-watsonx-ai 라이브러리가 설치되지 않았습니다"
     )
-    @pytest.mark.skipif(
-        not has_watsonx_credentials(),
-        reason="WatsonX.AI credential이 환경변수에 설정되지 않았습니다",
-    )
     def test_get_provider_name(self, provider_config):
         """프로바이더 이름 반환 테스트"""
         provider = WatsonXAIProvider(
@@ -278,10 +255,6 @@ class TestWatsonXAIProvider:
 
     @pytest.mark.skipif(
         not WATSONX_AVAILABLE, reason="ibm-watsonx-ai 라이브러리가 설치되지 않았습니다"
-    )
-    @pytest.mark.skipif(
-        not has_watsonx_credentials(),
-        reason="WatsonX.AI credential이 환경변수에 설정되지 않았습니다",
     )
     def test_call_with_long_prompt(self, provider_config):
         """긴 프롬프트를 사용한 API 호출 테스트"""

@@ -118,7 +118,7 @@ class JavaASTParser:
         import logging
 
         self.parser = Parser(JAVA_LANGUAGE)
-        self.logger = logging.getLogger(__name__)
+        self.logger = logging.getLogger("applycrypto.java_parser")
         # cache_manager가 없으면 임시 디렉터리에 생성
         if cache_manager is None:
             from tempfile import mkdtemp
@@ -195,6 +195,47 @@ class JavaASTParser:
             return None, f"파일을 찾을 수 없습니다: {file_path}"
         except Exception as e:
             return None, f"파싱 중 오류 발생: {str(e)}"
+
+    def get_classes(
+        self, file_path: Path
+    ) -> Tuple[List[ClassInfo], Optional[str]]:
+        """
+        Java 파일 경로를 입력받아서 클래스 정보를 반환
+
+        Args:
+            file_path: Java 파일 경로 (Path 객체 또는 문자열)
+
+        Returns:
+            Tuple[List[ClassInfo], Optional[str]]: (클래스 정보 목록, 에러 메시지)
+                에러가 없으면 에러 메시지는 None
+        """
+        # Path 객체로 변환 (SourceFile 객체가 전달될 수 있으므로 path 속성 확인)
+        if hasattr(file_path, "path"):
+            # SourceFile 객체인 경우 path 속성 사용
+            file_path = Path(file_path.path)
+        else:
+            file_path = Path(file_path)
+
+        # 캐시 확인
+        cached_ast = self.cache_manager.get_cached_result(file_path)
+        
+        if cached_ast:
+            # 캐시가 있으면 캐시에서 Tree를 가져와서 사용
+            tree = cached_ast
+        else:
+            # 캐시가 없으면 parse_file 호출
+            tree, error = self.parse_file(file_path, remove_comments=True)
+            if error:
+                return [], error
+            if tree is None:
+                return [], "파싱 결과가 None입니다"
+
+        # extract_class_info를 사용하여 클래스 정보 추출
+        try:
+            classes = self.extract_class_info(tree, file_path)
+            return classes, None
+        except Exception as e:
+            return [], f"클래스 정보 추출 중 오류 발생: {str(e)}"
 
     def extract_class_info(self, tree: Tree, file_path: Path) -> List[ClassInfo]:
         """
