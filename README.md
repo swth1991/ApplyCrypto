@@ -352,6 +352,21 @@ python main.py modify --config config.json --dry-run
 
 # 파일 수정 (실제 수정)
 python main.py modify --config config.json
+
+# End Point 리포트 생성
+python main.py generate-endpoint_report --config config.json
+
+# 사양서 생성 (Excel with LLM Method Summaries)
+python main.py generate-spec --config config.json --zip --diff --llm
+
+# 산출물 생성 (ChangeLog Excel)
+python main.py generate-artifact --config config.json --llm
+
+# KSIGN 호출 예측보고서 생성 (암복호화 호출 가중치)
+python main.py generate-ksign-report --config config.json
+
+# 분석서 생성 (AS-IS 분석)
+python main.py generate-analysis_report --config config.json --verify --trans
 ```
 
 ### 설정 파일 예시 (config.json)

@@ -104,9 +104,18 @@ class ThreeStepConfig(BaseModel):
         description="실행 옵션 (mode, plan_timestamp)",
     )
 
+class ArtifactGenerationConfig(BaseModel):
+    old_code_path: Optional[str] = Field(None, description="기존 코드 경로")
+    ksignUtils_pattern: List[str] = Field(default_factory=list, description="ksignUtils에서 암호화 관련 메서드 패턴")
+    policyId: List[str] = Field(default_factory=list, description="ksignUtils에서 암호화 관련 메서드에 매핑할 정책 ID 목록")
+
 
 class Configuration(BaseModel):
     target_project: str = Field(..., description="대상 프로젝트 루트 경로")
+
+    artifact_generation: Optional[ArtifactGenerationConfig] = Field(
+        None, description="이관 산출물 생성 설정"
+    )
 
     source_file_types: List[str] = Field(
         ..., description="수집할 소스 파일 확장자 목록"
@@ -194,6 +203,8 @@ class Configuration(BaseModel):
             if table.table_name == table_name:
                 return table.columns
         return []
+
+
 
 
 # 전역 설정 인스턴스

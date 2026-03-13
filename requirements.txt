@@ -28,9 +28,5 @@ ibm-watsonx-ai>=1.0.0  # WatsonX.AI 사용 시
 # openai>=1.0.0  # OpenAI 사용 시
 anthropic>=0.18.0  # Claude AI 사용 시
 
-
-# UI
-streamlit>=1.52.2
-
 # check_join 엑셀 내보내기
 openpyxl>=3.1.0
