@@ -105,6 +105,67 @@ def _filter_joins_by_known_tables(
     return out
 
 
+def _normalize_column_name(name: str) -> str:
+    return (name or "").strip().lower()
+
+
+def _build_table_to_columns(table_access_infos: List[Any]) -> Dict[str, set[str]]:
+    """
+    table_access_info 리스트로부터 (정규화된 테이블명 -> 컬럼명 set) 맵을 생성합니다.
+    _filter_joins_by_known_tables_columns에 넘길 table_to_columns를 만들 때 사용합니다.
+    """
+    table_to_columns: Dict[str, set[str]] = {}
+    for t in table_access_infos or []:
+        if isinstance(t, TableAccessInfo):
+            table_name = t.table_name
+            columns_raw = t.columns
+        elif isinstance(t, dict):
+            table_name = t.get("table_name") or ""
+            columns_raw = t.get("columns") or []
+        else:
+            continue
+        key = _normalize_table_name(table_name)
+        if not key:
+            continue
+        col_set: set[str] = set()
+        for c in columns_raw or []:
+            if isinstance(c, str):
+                col_set.add(_normalize_column_name(c))
+            elif isinstance(c, dict):
+                name = c.get("name")
+                if name is not None:
+                    col_set.add(_normalize_column_name(str(name)))
+            else:
+                name = getattr(c, "name", None)
+                if name is not None:
+                    col_set.add(_normalize_column_name(str(name)))
+        table_to_columns[key] = col_set
+    return table_to_columns
+
+
+def _filter_joins_by_known_tables_columns(
+    joins: List[Dict[str, Any]],
+    table_to_columns: Dict[str, set[str]],
+) -> List[Dict[str, Any]]:
+    """
+    table_access_info에 포함된 (테이블, 컬럼) 조합에 해당하는 join은 제외합니다.
+    - target_table이 table_to_columns 키에 있고,
+    - target_column이 해당 테이블의 컬럼 set에 있으면 → 제외(filter out).
+    그 외의 join은 출력 목록에 포함합니다.
+    table_to_columns는 _build_table_to_columns(table_access_infos)로 생성합니다.
+    """
+    out: List[Dict[str, Any]] = []
+    for j in joins or []:
+        if not isinstance(j, dict):
+            continue
+        target_table = _normalize_table_name(str(j.get("target_table", "")))
+        target_column = _normalize_column_name(str(j.get("target_column", "")))
+        if target_table in table_to_columns and target_column in table_to_columns[target_table]:
+            continue
+        out.append(j)
+    return out
+
+
 def _load_existing_results(results_path: Path) -> Dict[str, Any]:
     if not results_path.exists():
         return {"results": []}
@@ -189,7 +250,7 @@ class CheckJoinRunner:
         by_table: Dict[str, TableAccessInfo] = {
             _normalize_table_name(t.table_name): t for t in table_access_infos if t and t.table_name
         }
-        known_table_names_normalized: set[str] = set(by_table.keys())
+        table_to_columns = _build_table_to_columns(table_access_infos)
 
         template = _read_prompt_template()
         from modifier.llm.llm_factory import create_llm_provider
@@ -257,7 +318,7 @@ class CheckJoinRunner:
                         continue
 
                     # 단일 컬럼 결과를 기대하지만, 안전하게 joins만 수집
-                    # target_table이 table_access_info에 있는 테이블이면 제외
+                    # target_table+target_column이 table_access_info에 있으면 제외
                     mapper_file = ""
                     if isinstance(q, dict) and q.get("source_file_path"):
                         mapper_file = Path(q["source_file_path"]).name
@@ -269,9 +330,9 @@ class CheckJoinRunner:
                                     continue
                                 joins = pc.get("joins", [])
                                 if isinstance(joins, list):
-                                    filtered_joins = _filter_joins_by_known_tables(
+                                    filtered_joins = _filter_joins_by_known_tables_columns(
                                         [j for j in joins if isinstance(j, dict)],
-                                        known_table_names_normalized,
+                                        table_to_columns,
                                     )
                                     for j in filtered_joins:
                                         j_with_meta = dict(j)
