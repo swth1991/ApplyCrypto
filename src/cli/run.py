@@ -17,6 +17,7 @@ from cli.cli_controller import CLIController
 
 def main():
     load_dotenv(".env")
+    load_dotenv("ATT61070.env", override=True)
 
     """CLI 메인 함수"""
     controller = CLIController()

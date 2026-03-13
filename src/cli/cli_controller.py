@@ -29,6 +29,7 @@ from parser.xml_mapper_parser import XMLMapperParser
 from parser.inherit_graph_builder import InheritGraphBuilder
 
 from analyzer.db_access_analyzer import DBAccessAnalyzer
+from analyzer.callgraph_endpoint_finder import find_endpoint_in_call_graph
 from collector.source_file_collector import SourceFileCollector
 from config.config_manager import Configuration, ConfigurationError
 from config.config_manager import load_config as load_global_config
@@ -169,30 +170,16 @@ class CLIController:
             help="디버그 모드 활성화 (Diff 파일 저장 등)",
         )
         modify_parser.add_argument(
+            "--force",
+            action="store_true",
+            help="LLM이 수정 불필요로 판단한 파일도 강제로 재시도합니다 (이미 암호화가 구현된 파일도 재수정)",
+        )
+        modify_parser.add_argument(
             "--target-table",
             type=str,
             default=None,
-            help="특정 대상 테이블만 처리합니다",
+            help="특정 테이블만 처리합니다 (기본값: 모든 테이블 처리)",
         )
-
-        # check-join 명령어 서브파서
-        check_join_parser = subparsers.add_parser(
-            "check-join",
-            help="access_tables 기준 JOIN 대상 테이블/컬럼을 분석합니다",
-            description="analyze 결과(table_access_info.json)와 access_tables를 이용해 JOIN 대상 테이블/컬럼을 LLM으로 분석합니다.",
-        )
-        check_join_parser.add_argument(
-            "--config",
-            type=str,
-            default="config.json",
-            help="설정 파일 경로 (기본값: config.json)",
-        )
-        check_join_parser.add_argument(
-            "--export",
-            action="store_true",
-            help="기존 check_join_results.json을 엑셀로 내보냅니다 (openpyxl 사용)",
-        )
-
 
         # clear 명령어 서브파서
         clear_parser = subparsers.add_parser(
@@ -210,6 +197,121 @@ class CLIController:
             "--backup",
             action="store_true",
             help="삭제 전 백업을 생성합니다",
+        )
+
+        # generate-spec 명령어 서브파서
+        spec_parser = subparsers.add_parser(
+            "generate-spec",
+            help="Java 소스 파일로부터 클래스 사양서(Excel)를 생성합니다",
+            description="Java 소스 파일을 분석하여 클래스별 Excel 사양서를 생성합니다. 사양서에는 클래스 정보, 메서드 목록, 메서드 상세 정보가 포함됩니다.",
+        )
+        spec_parser.add_argument(
+            "--config",
+            type=str,
+            default="config.json",
+            help="설정 파일 경로 (기본값: config.json)",
+        )
+        spec_parser.add_argument(
+            "--zip",
+            action="store_true",
+            help="생성된 Excel 사양서를 하나의 zip 파일로 묶어 출력합니다",
+        )
+        spec_parser.add_argument(
+            "--diff",
+            action="store_true",
+            help="변경된 메소드만 포함하여 사양서를 생성합니다 (old_code_path 필수)",
+        )
+        spec_parser.add_argument(
+            "--llm",
+            action="store_true",
+            help="LLM을 사용하여 각 메서드의 참고사항 요약을 생성합니다",
+        )
+
+        # generate-artifact 명령어 서브파서
+        artifact_parser = subparsers.add_parser(
+            "generate-artifact",
+            help="ChangedFileList TXT 파일을 읽어 클래스별 변경내역서(Excel)를 생성합니다",
+            description="ChangedFileList TXT 파일을 읽어 클래스별 변경내역서(Excel)를 생성합니다.",
+        )
+        artifact_parser.add_argument(
+            "--config",
+            type=str,
+            default="config.json",
+            help="설정 파일 경로 (기본값: config.json)",
+        )
+        artifact_parser.add_argument(
+            "--llm",
+            action="store_true",
+            help="LLM을 사용하여 1.개발관련문서 시트 분석 고도화",
+        )
+
+        # generate-endpoint_report 명령어 서브파서
+        endpoint_parser = subparsers.add_parser(
+            "generate-endpoint_report",
+            help="변경 코드 End Point 목록(Excel)을 생성합니다",
+            description="변경된 Java 파일의 메소드들의 End Point 목록을 Call Graph JSON을 기반으로 생성합니다."
+        )
+        endpoint_parser.add_argument(
+            "--config",
+            type=str,
+            default=None,
+            help="특정 대상 테이블만 처리합니다",
+        )
+
+        # generate-analysis_report 명령어 서브파서
+        analysis_report_parser = subparsers.add_parser(
+            "generate-analysis_report",
+            help="AS-IS 분석서(Excel)를 생성합니다",
+            description="타겟 프로젝트의 .applycrypto/results/*.json을 분석하여 AS-IS 분석서(Excel)를 생성합니다."
+        )
+        analysis_report_parser.add_argument(
+            "--config",
+            type=str,
+            default="config.json",
+            help="설정 파일 경로 (기본값: config.json)",
+        )
+        analysis_report_parser.add_argument(
+            "--trans",
+            action="store_true",
+            default=False,
+            help="LLM을 사용하여 Reason, Insertion Point, Code Pattern Hint, Sql Summary 항목을 영문에서 한글로 번역 (기본값: False)",
+        )
+        analysis_report_parser.add_argument(
+            "--verify",
+            action="store_true",
+            default=False,
+            help="SQL ID 검증 결과를 엑셀 시트로 추가 (기본값: False)",
+        )
+
+        # generate-ksign-report 명령어 서브파서
+        ksign_parser = subparsers.add_parser(
+            "generate-ksign-report",
+            help="KSIGN 호출 예측보고서(Excel)를 생성합니다",
+            description="암복호화 필드별 호출 가중치를 계산하여 KSIGN 호출 예측보고서(Excel)를 생성합니다.",
+        )
+        ksign_parser.add_argument(
+            "--config",
+            type=str,
+            default="config.json",
+            help="설정 파일 경로 (기본값: config.json)",
+        )
+      
+        # check-join 명령어 서브파서
+        check_join_parser = subparsers.add_parser(
+            "check-join",
+            help="access_tables 기준 JOIN 대상 테이블/컬럼을 분석합니다",
+            description="analyze 결과(table_access_info.json)와 access_tables를 이용해 JOIN 대상 테이블/컬럼을 LLM으로 분석합니다.",
+        )
+        check_join_parser.add_argument(
+            "--config",
+            type=str,
+            default="config.json",
+            help="설정 파일 경로 (기본값: config.json)",
+        )
+        check_join_parser.add_argument(
+            "--export",
+            action="store_true",
+            help="기존 check_join_results.json을 엑셀로 내보냅니다 (openpyxl 사용)",
         )
 
         return parser
@@ -321,6 +423,16 @@ class CLIController:
                 return self._handle_check_join(parsed_args)
             elif parsed_args.command == "clear":
                 return self._handle_clear(parsed_args)
+            elif parsed_args.command == "generate-spec":
+                return self._handle_generate_spec(parsed_args)            
+            elif parsed_args.command == "generate-artifact":
+                return self._handle_generate_artifact(parsed_args)
+            elif parsed_args.command == "generate-endpoint_report":
+                return self._handle_generate_endpoint(parsed_args)
+            elif parsed_args.command == "generate-analysis_report":
+                return self._handle_generate_analysis_report(parsed_args)
+            elif parsed_args.command == "generate-ksign-report":
+                return self._handle_generate_ksign_report(parsed_args)
             else:
                 self.logger.error(f"알 수 없는 명령어: {parsed_args.command}")
                 return 1
@@ -1014,30 +1126,37 @@ class CLIController:
                 self.logger.info("Call Graph 데이터가 없습니다.")
                 return
 
-            # 엔드포인트 찾기
-            endpoints = call_graph_data.get("endpoints", [])
+            # [공통 함수 사용] 엔드포인트 매칭
+            # _list_callgraph의 기존 정확한 매칭 로직을 endpoint_analyzer에서 재사용
+            target_endpoint_obj = find_endpoint_in_call_graph(
+                method_signature=endpoint,
+                call_graph_data=call_graph_data,
+                return_type="endpoint"
+            )
+            # # 엔드포인트 찾기
+            # endpoints = call_graph_data.get("endpoints", [])
 
-            # Endpoint 객체로 변환
-            endpoint_objects = []
-            for ep in endpoints:
-                if isinstance(ep, dict):
-                    endpoint_objects.append(Endpoint.from_dict(ep))
-                elif isinstance(ep, Endpoint):
-                    endpoint_objects.append(ep)
+            # # Endpoint 객체로 변환
+            # endpoint_objects = []
+            # for ep in endpoints:
+            #     if isinstance(ep, dict):
+            #         endpoint_objects.append(Endpoint.from_dict(ep))
+            #     elif isinstance(ep, Endpoint):
+            #         endpoint_objects.append(ep)
 
-            target_endpoint_obj = None
-            method_sig = None
+            # target_endpoint_obj = None
+            # method_sig = None
 
-            # 엔드포인트 매칭
-            for ep in endpoint_objects:
-                method_sig = ep.method_signature
-                if (
-                    endpoint in method_sig
-                    or method_sig.endswith(endpoint)
-                    or method_sig == endpoint
-                ):
-                    target_endpoint_obj = ep
-                    break
+            # # 엔드포인트 매칭
+            # for ep in endpoint_objects:
+            #     method_sig = ep.method_signature
+            #     if (
+            #         endpoint in method_sig
+            #         or method_sig.endswith(endpoint)
+            #         or method_sig == endpoint
+            #     ):
+            #         target_endpoint_obj = ep
+            #         break
 
             # Call Graph 복원 (저장된 call_trees 사용)
             call_graph_builder = CallGraphBuilder()
@@ -1047,6 +1166,14 @@ class CLIController:
             if call_trees:
                 try:
                     endpoints = call_graph_data["endpoints"]
+                    # Endpoint 객체로 변환
+                    endpoint_objects = []
+                    for ep in endpoints:
+                        if isinstance(ep, dict):
+                            endpoint_objects.append(Endpoint.from_dict(ep))
+                        elif isinstance(ep, Endpoint):
+                            endpoint_objects.append(ep)
+                    
                     # call_graph 복원
                     call_graph_builder.restore_from_call_trees(
                         call_trees=call_trees, endpoints=endpoint_objects
@@ -1571,5 +1698,200 @@ class CLIController:
             return 1
         except Exception as e:
             self.logger.exception(f"Call Chain 수정 중 오류: {e}")
+                       
             self.logger.error(f"오류: {e}")
+            return 1
+
+
+    def _handle_generate_spec(self, args: argparse.Namespace) -> int:
+        """
+        generate-spec 명령어 핸들러
+
+        Java 소스 파일을 분석하여 클래스별 Excel 사양서를 생성합니다.
+
+        Args:
+            args: 파싱된 인자
+
+        Returns:
+            int: 종료 코드
+        """
+        try:
+            from generator.spec_generator import generate_spec
+
+            # 설정 파일 로드
+            config = load_global_config(args.config)
+
+            self.logger.info("사양서 생성 시작")
+            generate_spec(
+                config,
+                zip_output=args.zip,
+                diff_mode=args.diff,
+                llm_enabled=getattr(args, 'llm', False),
+            )
+            self.logger.info("사양서 생성 완료")
+            return 0
+            
+        except ValueError as e:
+            # spec_generator의 diff_mode 검증 오류
+            self.logger.error(f"오류: {e}")
+            return 1
+        except ImportError as e:
+            self.logger.error(f"오류: spec_generator 모듈을 로드할 수 없습니다: {e}")
+            return 1
+        except Exception as e:
+            self.logger.exception(f"사양서 생성 중 오류: {e}")
+            print(f"오류: {e}", file=sys.stderr)
+            return 1
+
+    def _handle_generate_artifact(self, args: argparse.Namespace) -> int:
+        """
+        generate-artifact 명령어 핸들러
+
+        Args:
+            args: 파싱된 인자
+
+        Returns:
+            int: 종료 코드
+        """
+        try:
+            from src.generator.artifact_generator import generate_artifact
+
+            # 설정 파일 로드
+            config = load_global_config(args.config)
+
+            self.logger.info("이관산출물 생성 시작")
+            generate_artifact(
+                config,
+                use_llm=args.llm
+            )
+            self.logger.info("이관산출물 생성 완료")
+            return 0
+
+        except ConfigurationError as e:
+            self.logger.error(f"오류: {e}")
+            print(f"오류: {e}", file=sys.stderr)
+            return 1
+        except Exception as e:
+            self.logger.exception(f"generate-artifact 명령어 실행 중 오류: {e}")
+            self.logger.error(f"오류: {e}")
+            print(f"오류: {e}", file=sys.stderr)
+            return 1
+    
+    def _handle_generate_endpoint(self, args: argparse.Namespace) -> int:
+        """
+        generate-endpoint_report 명령어 핸들러
+
+        변경 코드의 End Point 목록을 Call Graph JSON을 기반으로 Excel로 생성합니다.
+
+        Args:
+            args: 파싱된 인자
+
+        Returns:
+            int: 종료 코드
+        """
+        try:
+            from src.generator.endpoint_report_generator import generate_endpoint_report
+
+            # 설정 파일 로드
+            config = load_global_config(args.config)
+
+            self.logger.info("End Point 목록 보고서 생성 시작")
+            generate_endpoint_report(config)
+            self.logger.info("End Point 목록 보고서 생성 완료")
+            return 0
+
+        except ConfigurationError as e:
+            self.logger.error(f"오류: {e}")
+            print(f"오류: {e}", file=sys.stderr)
+            return 1
+        except Exception as e:
+            self.logger.exception(f"generate-endpoint_report 명령어 실행 중 오류: {e}")
+            self.logger.error(f"오류: {e}")
+            print(f"오류: {e}", file=sys.stderr)
+            return 1
+    
+    def _handle_generate_analysis_report(self, args: argparse.Namespace) -> int:
+        """
+        generate-analysis_report 명령어 핸들러
+
+        Args:
+            args: 파싱된 인자
+
+        Returns:
+            int: 종료 코드
+        """
+        try:
+            from src.generator.analysis_report_generator import generate_analysis_report
+
+            # 설정 파일 로드
+            config = load_global_config(args.config)
+
+            self.logger.info("AS-IS 분석서 생성 시작")
+            generate_analysis_report(
+                config,
+                enable_translation=args.trans,
+                enable_verification=args.verify,
+            )
+            self.logger.info("AS-IS 분석서 생성 완료")
+            return 0
+
+        except ConfigurationError as e:
+            self.logger.error(f"오류: {e}")
+            print(f"오류: {e}", file=sys.stderr)
+            return 1
+        except Exception as e:
+            self.logger.exception(f"generate-analysis_report 명령어 실행 중 오류: {e}")
+            self.logger.error(f"오류: {e}")
+            print(f"오류: {e}", file=sys.stderr)
+            return 1
+
+    def _handle_generate_ksign_report(self, args: argparse.Namespace) -> int:
+        """
+        generate-ksign-report 명령어 핸들러
+
+        KSIGN 호출 예측보고서(암복호화 필드별 호출 가중치)를 생성합니다.
+
+        Args:
+            args: 파싱된 인자
+
+        Returns:
+            int: 종료 코드
+        """
+        try:
+            from generator.ksign_report_generator import KSIGNReportGenerator
+
+            # 설정 파일 로드
+            config = load_global_config(args.config)
+            
+            # 대상 프로젝트의 .applycrypto 디렉토리 경로 구성
+            applycrypto_dir = Path(config.target_project) / ".applycrypto"
+            
+            if not applycrypto_dir.exists():
+                raise FileNotFoundError(
+                    f".applycrypto 디렉토리를 찾을 수 없습니다: {applycrypto_dir}"
+                )
+
+            self.logger.info("KSIGN 호출 예측보고서 생성 시작")
+            generator = KSIGNReportGenerator(config=config, applycrypto_dir=str(applycrypto_dir))
+            success = generator.run_full_pipeline()
+            
+            if success:
+                self.logger.info("KSIGN 호출 예측보고서 생성 완료")
+                return 0
+            else:
+                self.logger.error("KSIGN 호출 예측보고서 생성 실패")
+                return 1
+
+        except FileNotFoundError as e:
+            self.logger.error(f"오류: {e}")
+            print(f"오류: {e}", file=sys.stderr)
+            return 1
+        except ConfigurationError as e:
+            self.logger.error(f"오류: {e}")
+            print(f"오류: {e}", file=sys.stderr)
+            return 1
+        except Exception as e:
+            self.logger.exception(f"generate-ksign-report 명령어 실행 중 오류: {e}")
+            self.logger.error(f"오류: {e}")
+            print(f"오류: {e}", file=sys.stderr)
             return 1

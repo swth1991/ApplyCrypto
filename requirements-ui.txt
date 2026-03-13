@@ -1,0 +1,4 @@
+# Optional UI dependencies
+# Install with: pip install -r requirements-ui.txt
+
+streamlit>=1.52.2
