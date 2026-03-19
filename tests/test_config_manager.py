@@ -178,7 +178,6 @@ def test_default_values():
     assert config.llm_provider == "watsonx_ai"
     assert config.exclude_dirs == []
     assert config.exclude_files == []
-    assert config.use_call_chain_mode is False
     assert config.use_llm_parser is False
     assert config.max_tokens_per_batch == 8000
     assert config.max_workers == 4

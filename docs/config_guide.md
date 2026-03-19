@@ -130,14 +130,6 @@
   - `false`: 정규식 기반 SQL 파싱 사용 (기본값, 빠름)
   - `true`: LLM을 사용한 SQL 추출 (정확도 높음, 느림)
 
-### use_call_chain_mode
-- **타입**: `boolean`
-- **기본값**: `false`
-- **설명**: Call Chain 모드 사용 여부
-- **사용 시나리오**:
-  - `false`: 레이어별 배치 처리 (기본값)
-  - `true`: 호출 체인 단위로 LLM 호출하여 최적 레이어에 암호화 코드 삽입
-
 ### exclude_dirs
 - **타입**: `string[]`
 - **기본값**: `[]`
