@@ -1,0 +1,160 @@
+@startuml Analyzer Component Diagram
+!theme plain
+skinparam componentStyle rectangle
+skinparam linetype ortho
+skinparam dpi 150
+skinparam maxMessageSize 150
+skinparam nodesep 40
+skinparam ranksep 60
+scale 2500 width
+
+title ApplyCrypto - Analyzer Component Architecture
+
+' External Systems
+cloud "Target Project" as TargetProject {
+  file "Java Files" as JavaFiles
+  file "XML Mappers" as XMLFiles
+}
+
+' CLI Layer
+package "CLI Layer" {
+  component [CLIController] as CLI
+}
+
+' Configuration Layer
+package "Configuration" {
+  component [ConfigManager] as Config
+  component [ConfigMigration] as Migration
+  file "config.json" as ConfigFile
+}
+
+' Collection Layer
+package "Collection" {
+  component [SourceFileCollector] as Collector
+}
+
+' Parser Layer
+package "Parser Layer" {
+  component [JavaASTParser] as JavaParser
+  component [XMLMapperParser] as XMLParser
+  component [CallGraphBuilder] as CallGraph
+  component [InheritGraphBuilder] as InheritGraph
+}
+
+' Endpoint Strategies
+package "Endpoint Strategies" {
+  interface [EndpointStrategy] as EndpointStrategy
+  component [SpringMVC] as SpringMVC
+  component [Anyframe] as Anyframe
+  component [Batch] as Batch
+  component [Direct] as Direct
+}
+
+' Analyzer Layer
+package "Analyzer Layer" {
+  component [DBAccessAnalyzer] as DBAnalyzer
+  component [EndpointFinder] as EndpointFinder
+}
+
+' SQL Extractors
+package "SQL Extractors" {
+  interface [SQLExtractor] as SQLExtractorIF
+  component [SQLFactory] as SQLFactory
+  component [MyBatis] as MyBatis
+  component [JDBC] as JDBC
+  component [JPA] as JPA
+  component [BatchSQL] as BatchSQL
+  component [LLMSQL] as LLMSQL
+}
+
+' Persistence Layer
+package "Persistence" {
+  component [DataPersistence] as DataPersist
+  component [CacheManager] as Cache
+  component [DebugManager] as Debug
+  
+  database ".applycrypto" as ResultsDB {
+    file "source_files.json" as SourceFilesJSON
+    file "call_graph.json" as CallGraphJSON
+    file "sql_results.json" as SQLResultsJSON
+    file "table_access.json" as TableAccessJSON
+  }
+}
+
+' Generator Layer
+package "Generators" {
+  component [AnalysisReport] as ReportGen
+  component [EndpointReport] as EndpointReport
+  component [SpecGenerator] as SpecGen
+}
+
+' === Relationships ===
+
+' CLI to Config
+CLI --> Config
+Config --> ConfigFile
+Config --> Migration
+
+' CLI to Collection
+CLI --> Collector
+Collector ..> Config : uses
+
+' Collection to Target
+Collector --> TargetProject
+
+' CLI to Parser
+CLI --> JavaParser
+CLI --> XMLParser
+CLI --> CallGraph
+CLI --> InheritGraph
+
+' Parser relationships
+JavaParser --> TargetProject
+XMLParser --> TargetProject
+CallGraph --> JavaParser
+CallGraph --> EndpointStrategy
+CallGraph ..> Config : uses
+EndpointStrategy <|.. SpringMVC
+EndpointStrategy <|.. Anyframe
+EndpointStrategy <|.. Batch
+EndpointStrategy <|.. Direct
+
+' CLI to Analyzer
+CLI --> DBAnalyzer
+CLI --> EndpointFinder
+
+' Analyzer relationships
+DBAnalyzer --> SQLFactory
+DBAnalyzer ..> Config : uses
+SQLFactory --> SQLExtractorIF
+SQLExtractorIF <|.. MyBatis
+SQLExtractorIF <|.. JDBC
+SQLExtractorIF <|.. JPA
+SQLExtractorIF <|.. BatchSQL
+SQLExtractorIF <|.. LLMSQL
+DBAnalyzer --> CallGraph
+EndpointFinder --> CallGraph
+
+' CLI to Persistence
+CLI --> DataPersist
+DataPersist --> ResultsDB
+DataPersist --> Cache
+
+' Parser to Cache
+JavaParser --> Cache
+XMLParser --> Cache
+
+' CLI to Generator
+CLI --> ReportGen
+CLI --> EndpointReport
+CLI --> SpecGen
+
+' Generator to Persistence
+ReportGen --> DataPersist
+EndpointReport --> DataPersist
+SpecGen --> DataPersist
+
+' Debug
+CLI --> Debug
+
+@enduml

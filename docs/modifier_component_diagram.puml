@@ -1,0 +1,179 @@
+@startuml Modifier Component Diagram
+!theme plain
+skinparam componentStyle rectangle
+skinparam linetype ortho
+skinparam dpi 120
+skinparam maxMessageSize 150
+skinparam nodesep 30
+skinparam ranksep 40
+scale 2500 width
+
+title ApplyCrypto - Modifier Component Architecture
+
+' External Systems
+cloud "Target Project" as TargetProject {
+  file "Java Source Files" as JavaFiles
+}
+
+cloud "LLM Services" as LLMCloud {
+  component [OpenAI] as OpenAI
+  component [WatsonX] as WatsonX
+  component [Claude] as Claude
+}
+
+' CLI Layer
+package "CLI Layer" {
+  component [CLIController] as CLI
+}
+
+' Configuration Layer
+package "Config" {
+  component [ConfigManager] as ConfigMgr
+  file "config.json" as ConfigFile
+  
+  ConfigMgr -down-> ConfigFile
+}
+
+' Input Data Layer
+package "Input Data" {
+  database ".applycrypto" as ResultsDB {
+    file "table_access.json" as TableAccessJSON
+    file "call_graph.json" as CallGraphJSON
+    file "sql_results.json" as SQLResultsJSON
+  }
+}
+
+' Core Modifier Layer
+package "Modifier Core" {
+  component [CodeModifier] as Modifier
+  component [BatchProcessor] as BatchProc
+  component [ErrorHandler] as ErrorHandler
+  component [ResultTracker] as ResultTracker
+}
+
+' Context Generation Layer
+package "Context Generation" {
+  interface [BaseContextGenerator] as ContextGenIF
+  component [ContextFactory] as ContextFactory
+  component [MyBatisContext] as MyBatisCtx
+  component [JDBCContext] as JDBCCtx
+  component [AnyframeContext] as AnyframeCtx
+  component [BatchContext] as BatchCtx
+  component [TypeHandlerContext] as TypeHandlerCtx
+}
+
+' Code Generation Layer
+package "Code Generation" {
+  interface [BaseCodeGenerator] as CodeGenIF
+  component [CodeGenFactory] as CodeGenFactory
+  
+  package "Three-Step" {
+    component [ThreeStepGenerator] as ThreeStep
+    file "planning.md" as ThreeStepPlan
+    file "execution.md" as ThreeStepExec
+  }
+  
+  package "TypeHandler" {
+    component [TypeHandlerGenerator] as TypeHandlerGen
+    file "planning.md" as TypeHandlerPlan
+    file "execution.md" as TypeHandlerExec
+  }
+}
+
+' LLM Provider Layer
+package "LLM Provider" {
+  interface [LLMProvider] as LLMProviderIF
+  component [LLMFactory] as LLMFactory
+  
+  LLMFactory -down-> LLMProviderIF
+  
+  component [OpenAIProvider] as OpenAIProvider
+  component [WatsonXProvider] as WatsonXProvider
+  component [ClaudeProvider] as ClaudeProvider
+  component [MockProvider] as MockProvider
+  
+  LLMProviderIF <|.down. OpenAIProvider
+  LLMProviderIF <|.down. WatsonXProvider
+  LLMProviderIF <|.down. ClaudeProvider
+  LLMProviderIF <|.down. MockProvider
+}
+
+' Code Patching Layer
+package "Code Patching" {
+  interface [BasePatcher] as PatcherIF
+  component [DiffPatcher] as DiffPatcher
+  component [FullPatcher] as FullPatcher
+  component [MethodPatcher] as MethodPatcher
+  component [PartPatcher] as PartPatcher
+  component [DiffUtils] as DiffUtils
+}
+
+' Output Layer
+package "Output" {
+  database "Results" as ModResults {
+    file "modification_records.json" as ModRecords
+    file "backup/" as Backups
+  }
+  component [DataPersistence] as DataPersist
+}
+
+' === Relationships ===
+
+' CLI Flow
+CLI --> ConfigMgr
+CLI --> Modifier
+CLI --> DataPersist
+DataPersist --> ResultsDB
+
+' Modifier Core Flow
+Modifier --> ContextFactory
+Modifier --> CodeGenFactory
+Modifier --> ErrorHandler
+Modifier --> ResultTracker
+Modifier --> BatchProc
+
+' Context Generation Flow
+ContextFactory --> ContextGenIF
+ContextGenIF <|.. MyBatisCtx
+ContextGenIF <|.. JDBCCtx
+ContextGenIF <|.. AnyframeCtx
+ContextGenIF <|.. BatchCtx
+ContextGenIF <|.. TypeHandlerCtx
+Modifier --> ContextGenIF
+
+' Code Generation Flow
+CodeGenFactory --> CodeGenIF
+CodeGenIF <|.. TwoStep
+CodeGenIF <|.. ThreeStep
+CodeGenIF <|.. TypeHandlerGen
+ThreeStep --> ThreeStepPlan
+ThreeStep --> ThreeStepExec
+TypeHandlerGen --> TypeHandlerPlan
+TypeHandlerGen --> TypeHandlerExec
+Modifier --> CodeGenIF
+
+' LLM Integration
+CodeGenIF --> LLMFactory
+OpenAIProvider --> OpenAI
+WatsonXProvider --> WatsonX
+ClaudeProvider --> Claude
+
+' Code Patching Flow
+Modifier --> PatcherIF
+PatcherIF <|.. DiffPatcher
+PatcherIF <|.. FullPatcher
+PatcherIF <|.. MethodPatcher
+PatcherIF <|.. PartPatcher
+DiffPatcher --> DiffUtils
+PatcherIF --> TargetProject
+PatcherIF --> Backups
+
+' Result Tracking
+ResultTracker --> DataPersist
+DataPersist --> ModResults
+
+' Error Handling
+ErrorHandler --> Backups
+ErrorHandler --> PatcherIF
+
+@enduml
